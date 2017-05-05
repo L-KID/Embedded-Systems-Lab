@@ -140,6 +140,7 @@ Int TSKMESSAGE_execute(TSKMESSAGE_TransferInfo* info)
     Int status = SYS_OK;
     ControlMsg* msg;
     Uint32 i;
+    int j, k;
 
     /* Allocate and send the message */
     status = MSGQ_alloc(SAMPLE_POOL_ID, (MSGQ_Msg*) &msg, APP_BUFFER_SIZE);
@@ -149,7 +150,7 @@ Int TSKMESSAGE_execute(TSKMESSAGE_TransferInfo* info)
         MSGQ_setMsgId((MSGQ_Msg) msg, info->sequenceNumber);
         MSGQ_setSrcQueue((MSGQ_Msg) msg, info->localMsgq);
         msg->command = 0x01;
-        SYS_sprintf(msg->arg1, "DSP is awake!");
+        //SYS_sprintf(msg->arg1, "DSP is awake!");
 
         status = MSGQ_put(info->locatedMsgq, (MSGQ_Msg) msg);
         if (status != SYS_OK)
@@ -195,9 +196,18 @@ Int TSKMESSAGE_execute(TSKMESSAGE_TransferInfo* info)
             }
             else
             {
-		/* Include your control flag or processing code here */
+            /* Include your control flag or processing code here */
                 msg->command = 0x02;
-                SYS_sprintf(msg->arg1, "Iteration %d is complete.", i);
+                //SYS_sprintf(msg->arg1, "Iteration %d is complete.", i);
+
+                /* Increment all numbers in matrix */
+                for (k = 0;k < ARG_SIZE; k++)
+                {
+                    for (j = 0; j < ARG_SIZE; j++)
+                    {
+                        msg->arg1[k][j]++;
+                    }
+                }
 
                 /* Increment the sequenceNumber for next received message */
                 info->sequenceNumber++;
