@@ -137,11 +137,11 @@ Int TSKMESSAGE_create(TSKMESSAGE_TransferInfo** infoPtr)
  */
 Int TSKMESSAGE_execute(TSKMESSAGE_TransferInfo* info)
 {
-    int mat1[ARG_SIZE][ARG_SIZE], mat2[ARG_SIZE][ARG_SIZE], prod[ARG_SIZE][ARG_SIZE];
+    int mat1[1][ARG_SIZE], mat2[ARG_SIZE][ARG_SIZE], prod[1][ARG_SIZE];
     Int status = SYS_OK;
     ControlMsg* msg;
     Uint32 i;
-    int i, j,k;
+    int h,j,k;
 
     /* Allocate and send the message */
     status = MSGQ_alloc(SAMPLE_POOL_ID, (MSGQ_Msg*) &msg, APP_BUFFER_SIZE);
@@ -207,10 +207,12 @@ Int TSKMESSAGE_execute(TSKMESSAGE_TransferInfo* info)
                         msg->arg1[k][j]++;
                     }
                 }*/
+                
+                /* Store recevied massages into mat1 & mat2 */
                 if(i == 1)
-                    memcpy(&mat1, &msg->arg1, ARG_SIZE*ARG_SIZE*sizeof(int));
-                else if(i == 2)
                     memcpy(&mat2, &msg->arg1, ARG_SIZE*ARG_SIZE*sizeof(int));
+                else if(i < ARG_SIZE + 2)
+                    memcpy(&mat1, &msg->arg2, 1*ARG_SIZE*sizeof(int));
 
 
                 /* Increment the sequenceNumber for next received message */
@@ -222,13 +224,38 @@ Int TSKMESSAGE_execute(TSKMESSAGE_TransferInfo* info)
                 }
                 MSGQ_setMsgId((MSGQ_Msg) msg, info->sequenceNumber);
                 MSGQ_setSrcQueue((MSGQ_Msg) msg, info->localMsgq);
+                
+                
+                if (i > 1 && i < ARG_SIZE + 2)
+                {
+                 /* Calculate every line of the product */
+                 for (j = 0; j < ARG_SIZE; j++)
+                 {
+                     for (k = 0; k < ARG_SIZE; k++)
+                     {
+                      prod[0][j]=0;
+                      prod[0][j] = prod[0][j]+mat1[0][k] * mat2[k][j];
+                     }
+                  }
+                    
+                
+                /* Send the message back to the GPP */
+                memcpy(&msg->arg2, &prod, 1*ARG_SIZE*sizeof(int));
+                status = MSGQ_put(info->locatedMsgq,(MSGQ_Msg) msg);
+                if (status != SYS_OK)
+                {
+                    SET_FAILURE_REASON(status);
+                }
+                }
 
-                /* Send the message back to the GPP 
+
+                /* Send the message back to the GPP
                 status = MSGQ_put(info->locatedMsgq,(MSGQ_Msg) msg);
                 if (status != SYS_OK)
                 {
                     SET_FAILURE_REASON(status);
                 }*/
+                
             }
         }
         else
@@ -236,23 +263,9 @@ Int TSKMESSAGE_execute(TSKMESSAGE_TransferInfo* info)
             SET_FAILURE_REASON (status);
         }
     }
-   
-    for (i = 0;i < ARG_SIZE; i++)
-    {
-        for (j = 0; j < ARG_SIZE; j++)
-        {
-            prod[i][j]=0;
-            for(k=0;k<ARG_SIZE;k++)
-                prod[i][j] = prod[i][j]+mat1[i][k] * mat2[k][j];
-        }
-    }
-    /* Send the message back to the GPP */
-    memcpy(&msg->arg1, &prod, ARG_SIZE*ARG_SIZE*sizeof(int));
-    status = MSGQ_put(info->locatedMsgq,(MSGQ_Msg) msg);
-    if (status != SYS_OK)
-        {
-            SET_FAILURE_REASON(status);
-        }
+    
+    
+
     return status;
 }
 

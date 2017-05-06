@@ -57,6 +57,7 @@ extern "C"
         Uint16 command;
         //Char8 arg1[ARG_SIZE];
         int arg1[ARG_SIZE][ARG_SIZE];
+        int arg2[1][ARG_SIZE];
     } ControlMsg;
 
     /* Messaging buffer used by the application.
@@ -260,7 +261,7 @@ extern "C"
      */
     NORMAL_API DSP_STATUS helloDSP_Execute(IN Uint32 numIterations, Uint8 processorId)
     {
-    	int mat1[ARG_SIZE][ARG_SIZE], mat2[ARG_SIZE][ARG_SIZE];
+        int mat1[ARG_SIZE][ARG_SIZE], mat2[ARG_SIZE][ARG_SIZE], prod[ARG_SIZE][ARG_SIZE];
     	int k,j;
 
         DSP_STATUS  status = DSP_SOK;
@@ -268,6 +269,7 @@ extern "C"
         Uint16 msgId = 0;
         Uint32 i;
         ControlMsg *msg;
+        int h;
 
         /* Initialize matrices */
         for (k=0;K<ARG_SIZE;k++)
@@ -288,6 +290,13 @@ extern "C"
         {
             /* Receive the message. */
             status = MSGQ_get(SampleGppMsgq, WAIT_FOREVER, (MsgqMsg *) &msg);
+            /* Store every line of product*/
+            if (i > 2)
+            {
+                int p = (int)(i-3);
+                memcpy(&prod[p], &msg->arg2, 1*ARG_SIZE*sizeof(int));
+            }
+            
             if (DSP_FAILED(status))
             {
                 SYSTEM_1Print("MSGQ_get () failed. Status = [0x%x]\n", status);
@@ -321,11 +330,14 @@ extern "C"
                 /* Send the same message received in earlier MSGQ_get () call. */
                 if (DSP_SUCCEEDED(status))
                 {
-                	/* Send matrix1 first, then matrix2 next. */
+                	/* Send matrix2 first, then every line of matrix1 one by one. */
                 	if(i == 1)
-                		memcpy(&msg->arg1, &mat1, ARG_SIZE*ARG_SIZE*sizeof(int));
-                	else if(i == 2)
                 		memcpy(&msg->arg1, &mat2, ARG_SIZE*ARG_SIZE*sizeof(int));
+                	else if(i < ARG_SIZE + 2)
+                    {
+                        h = (int)(i-2);
+                        memcpy(&msg->arg2, &mat1[h], 1*ARG_SIZE*sizeof(int));
+                    }
 
 
                     msgId = MSGQ_getMsgId(msg);
@@ -365,7 +377,7 @@ extern "C"
 
         SYSTEM_0Print("Leaving helloDSP_Execute ()\n");
         /* print the multiplication result */
-        SYSTEM_1Print("Message received: %d\n", (Uint32) msg->ar1);
+        SYSTEM_1Print("Product: %d\n", prod);
 
         return status;
     }
