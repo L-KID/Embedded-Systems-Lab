@@ -22,7 +22,7 @@
 #include <system_os.h>
 
 #include <stdio.h>
-#include <string.h>
+#include <string.h>   //v1 change
 
 
 #if defined (__cplusplus)
@@ -34,6 +34,7 @@ extern "C"
 #define NUM_ARGS 1
 
     /* Argument size passed to the control message queue */
+//#define ARG_SIZE 256
 #define ARG_SIZE 64
 
     /* ID of the POOL used by helloDSP. */
@@ -54,6 +55,7 @@ extern "C"
     {
         MSGQ_MsgHeader header;
         Uint16 command;
+        //Char8 arg1[ARG_SIZE];
         int arg1[ARG_SIZE][ARG_SIZE];
     } ControlMsg;
 
@@ -258,33 +260,23 @@ extern "C"
      */
     NORMAL_API DSP_STATUS helloDSP_Execute(IN Uint32 numIterations, Uint8 processorId)
     {
-	int mat1[ARG_SIZE][ARG_SIZE], mat2[ARG_SIZE][ARG_SIZE];
-	int k, j;        
-	DSP_STATUS  status = DSP_SOK;
+    	int mat1[ARG_SIZE][ARG_SIZE], mat2[ARG_SIZE][ARG_SIZE];
+    	int k,j;
+
+        DSP_STATUS  status = DSP_SOK;
         Uint16 sequenceNumber = 0;
         Uint16 msgId = 0;
         Uint32 i;
         ControlMsg *msg;
-	
-    /* Initialize matrices */
-	for (k = 0;k < ARG_SIZE; k++)
-	{
-		for (j = 0; j < ARG_SIZE; j++)
-		{
-			mat1[k][j] = k+j*2;
-            mat2[k][j] = k+j*3;
-		}
-	}
-	
-    /*
-	for(k = 0; k < ARG_SIZE; k++)
-	{
-		for (j = 0; j < ARG_SIZE; j++)
-		{
-			mat2[k][j] = k+j*3;
-		}
-	}
-    */
+
+        /* Initialize matrices */
+        for (k=0;K<ARG_SIZE;k++)
+        {
+        	for (j=0;j<ARG_SIZE;j++){
+        		mat1[k][j] = k+j*2;
+        		mat2[k][j] = k+j*3;
+        	}
+        }
 
         SYSTEM_0Print("Entered helloDSP_Execute ()\n");
 
@@ -313,9 +305,11 @@ extern "C"
 #endif
 
             if (msg->command == 0x01)
-                SYSTEM_0Print("DSP is awake!\n");
+                //SYSTEM_1Print("Message received: %s\n", (Uint32) msg->arg1);
+                SYSTEM_0Print("DSP is awake!\n");    //v1 change
             else if (msg->command == 0x02)
-                SYSTEM_1Print("Message received: %d\n", (Uint32) msg->arg1[4][1]);
+                //SYSTEM_1Print("Message received: %s\n", (Uint32) msg->arg1);
+                SYSTEM_1Print("Message received: %d\n", (Uint32) msg->ar1[4][1]);
 
             /* If the message received is the final one, free it. */
             if ((numIterations != 0) && (i == (numIterations + 1)))
@@ -327,12 +321,13 @@ extern "C"
                 /* Send the same message received in earlier MSGQ_get () call. */
                 if (DSP_SUCCEEDED(status))
                 {
-                    /* Send matrix1 first then matrix2 next. */
-        		    if (i == 1)
-                        memcpy(&msg->arg1, &mat1, ARG_SIZE*ARG_SIZE*sizeof(int));
-        		    else if (i == 2)
-                        memcpy(&msg->arg1, &mat2, ARG_SIZE*ARG_SIZE*sizeof(int));
-                    
+                	/* Send matrix1 first, then matrix2 next. */
+                	if(i == 1)
+                		memcpy(&msg->arg1, &mat1, ARG_SIZE*ARG_SIZE*sizeof(int));
+                	else if(i == 2)
+                		memcpy(&msg->arg1, &mat2, ARG_SIZE*ARG_SIZE*sizeof(int));
+
+
                     msgId = MSGQ_getMsgId(msg);
                     MSGQ_setMsgId(msg, msgId);
                     status = MSGQ_put(SampleDspMsgq, (MsgqMsg) msg);
@@ -369,6 +364,8 @@ extern "C"
 #endif
 
         SYSTEM_0Print("Leaving helloDSP_Execute ()\n");
+        /* print the multiplication result */
+        SYSTEM_1Print("Message received: %d\n", (Uint32) msg->ar1);
 
         return status;
     }
