@@ -21,10 +21,10 @@
 
 //#include <pool_notify_os.h>
 
-/*
-#if defined (__cplusplus)
+
+//#if defined (__cplusplus)
 extern "C" {
-#endif /* defined (__cplusplus) */
+//#endif /* defined (__cplusplus)
 
 /*  ============================================================================
  *  @const   NUM_ARGS
@@ -600,7 +600,7 @@ STATIC Void pool_notify_Notify (Uint32 eventNo, Pvoid arg, Pvoid info)
     }
 }
 
-/*
-#if defined (__cplusplus)
-}
-#endif /* defined (__cplusplus) */
+
+//#if defined (__cplusplus)
+//}
+//#endif /* defined (__cplusplus)
