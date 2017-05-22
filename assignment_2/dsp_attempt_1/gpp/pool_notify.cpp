@@ -3,7 +3,10 @@
 
 #include <semaphore.h>
 /*  ----------------------------------- DSP/BIOS Link                   */
-#include <dsplink.h>
+
+extern "C" {
+    #include <dsplink>
+}
 
 /*  ----------------------------------- DSP/BIOS LINK API               */
 #include <proc.h>
@@ -16,15 +19,16 @@
 
 
 /*  ----------------------------------- Application Header              */
-#include "meanshift.h"
-
-
+#include "pool_notify.h"
 //#include <pool_notify_os.h>
 
-/*
+/*  ----------------------------------- OpenCV Headers              */
+#include "opencv2/core/core.hpp"
+
 #if defined (__cplusplus)
 extern "C" {
 #endif /* defined (__cplusplus) */
+
 
 /*  ============================================================================
  *  @const   NUM_ARGS
@@ -398,7 +402,7 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
                     pool_notify_BufferSize);
 
     POOL_translateAddr ( POOL_makePoolId(processorId, SAMPLE_POOL_ID),
-                         (void**)&buf_dsp,
+                         (void*)&buf_dsp,
                          AddrType_Dsp,
                          (Void *) pool_notify_DataBuf,
                          AddrType_Usr) ;
@@ -600,7 +604,7 @@ STATIC Void pool_notify_Notify (Uint32 eventNo, Pvoid arg, Pvoid info)
     }
 }
 
-/*
+
 #if defined (__cplusplus)
 }
 #endif /* defined (__cplusplus) */

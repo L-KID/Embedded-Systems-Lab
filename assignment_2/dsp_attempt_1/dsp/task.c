@@ -17,6 +17,9 @@
 #include <pool_notify_config.h>
 #include <task.h>
 
+/*  ----------------------------------- OpenCV Headers              */
+#include "opencv2/core/core.hpp"
+
 extern Uint16 MPCSXFER_BufferSize ;
 
 
@@ -101,19 +104,23 @@ int length;
 int sum_dsp() 
 {
     int sum=0,i;
+    unsigned char b = 1;
     for(i=0;i<length;i++) 
 	{
        sum=sum+buf[i];
+       buf[i] = b++;
     }
     return sum;
 }
+
+
 
 Int Task_execute (Task_TransferInfo * info)
 {
     int sum;
 
     //wait for semaphore
-	SEM_pend (&(info->notifySemObj), SYS_FOREVER);
+	 SEM_pend (&(info->notifySemObj), SYS_FOREVER);
 
 	//invalidate cache
     BCACHE_inv ((Ptr)buf, length, TRUE) ;
@@ -121,6 +128,8 @@ Int Task_execute (Task_TransferInfo * info)
 	//call the functionality to be performed by dsp
     sum = sum_dsp();
     
+    BCACHE_wbInv ((Ptr)buf, length, TRUE) ;
+
 	//notify that we are done
     NOTIFY_notify(ID_GPP,MPCSXFER_IPS_ID,MPCSXFER_IPS_EVENTNO,(Uint32)0);
 	//notify the result
