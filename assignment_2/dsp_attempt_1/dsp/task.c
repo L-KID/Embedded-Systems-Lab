@@ -18,7 +18,7 @@
 #include <task.h>
 
 /*  ----------------------------------- OpenCV Headers              */
-#include "opencv2/core/core.hpp"
+//#include "opencv2/core/core.hpp"
 
 extern Uint16 MPCSXFER_BufferSize ;
 

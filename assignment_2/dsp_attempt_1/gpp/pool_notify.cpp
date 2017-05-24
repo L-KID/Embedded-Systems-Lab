@@ -1,5 +1,5 @@
-#include<stdlib.h>
-#include<stdio.h>
+#include <stdlib.h>
+#include <stdio.h>
 
 #include <semaphore.h>
 /*  ----------------------------------- DSP/BIOS Link                   */
@@ -23,6 +23,7 @@
 extern "C" {
 #endif /* defined (__cplusplus) */
 
+/* ------------------------------------ OpenCV Headers                  */
 #include "meanshift.h"
 
 

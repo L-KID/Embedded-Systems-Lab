@@ -15,6 +15,7 @@
 #include <task.h>
 #include <pool_notify_config.h>
 
+#include <stdlib.h>
 
 /** ============================================================================
  *  @const  FILEID
