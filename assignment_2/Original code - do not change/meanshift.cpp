@@ -21,17 +21,17 @@ void  MeanShift::Init_target_frame(const cv::Mat &frame,const cv::Rect &rect)
 
 float  MeanShift::Epanechnikov_kernel(cv::Mat &kernel)
 {
-    int h = kernel.rows;
-    int w = kernel.cols;
+    int h = kernel.rows;                //frame height
+    int w = kernel.cols;                //frame width
 
     float epanechnikov_cd = 0.1*PI*h*w;
     float kernel_sum = 0.0;
-    for(int i=0;i<h;i++)
+    for(int i=0;i<h;i++)                //for all rows
     {
-        for(int j=0;j<w;j++)
+        for(int j=0;j<w;j++)            //for each column of each row i.e. for each pixel of the frame
         {
             float x = static_cast<float>(i - h/2);
-            float  y = static_cast<float> (j - w/2);
+            float y = static_cast<float> (j - w/2);
             float norm_x = x*x/(h*h/4)+y*y/(w*w/4);
             float result =norm_x<1?(epanechnikov_cd*(1.0-norm_x)):0;
             kernel.at<float>(i,j) = result;
@@ -40,7 +40,8 @@ float  MeanShift::Epanechnikov_kernel(cv::Mat &kernel)
     }
     return kernel_sum;
 }
-cv::Mat MeanShift::pdf_representation(const cv::Mat &frame, const cv::Rect &rect)
+
+cv::Mat MeanShift::pdf_representation(const cv::Mat &frame, const cv::Rect &rect)   //pdf = probability density function
 {
     cv::Mat kernel(rect.height,rect.width,CV_32F,cv::Scalar(0));
     float normalized_C = 1.0 / Epanechnikov_kernel(kernel);
@@ -74,7 +75,7 @@ cv::Mat MeanShift::pdf_representation(const cv::Mat &frame, const cv::Rect &rect
 
 }
 
-cv::Mat MeanShift::CalWeight(const cv::Mat &frame, cv::Mat &target_model, 
+cv::Mat MeanShift::CalWeight(const cv::Mat &frame, cv::Mat &target_model,
                     cv::Mat &target_candidate, cv::Rect &rec)
 {
     int rows = rec.height;
