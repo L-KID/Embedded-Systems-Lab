@@ -18,12 +18,17 @@
 #include <task.h>
 
 /*  ----------------------------------- OpenCV Headers              */
+#include "meanshift.h"
+#include <string.h>
 //#include "opencv2/core/core.hpp"
 
 extern Uint16 MPCSXFER_BufferSize ;
 
 
 static Void Task_notify (Uint32 eventNo, Ptr arg, Ptr info) ;
+
+#define CMD_RECV_TARGET_CAND 10
+#define CMD_RECV_PDF_REPR    11
 
 Int Task_create (Task_TransferInfo ** infoPtr)
 {
@@ -112,35 +117,68 @@ int sum_dsp()
     return sum;
 }
 
+struct Rect target_region;
+Uint32 command;
+
 Int Task_execute (Task_TransferInfo * info)
 {
   int sum;
   float* float_buf;
+  float* target_candidate = (float*) malloc(128*sizeof(float)); // Currently assuming fixed size (since it is)
 
-  //wait for semaphore
-  SEM_pend (&(info->notifySemObj), SYS_FOREVER);
+  if(target_candidate == NULL) {
+    // Not enough memory available, what to do?
+  }
 
-	//invalidate cache
-  BCACHE_inv ((Ptr)buf, length, TRUE) ;
+  while (command != 0) {
 
-  //call the functionality to be performed by dsp
-  //sum = sum_dsp();
-  
-  // Test for floating point
-  float_buf = (float*)buf;
-  float_buf[0] = 2.0f;
-  float_buf[1] = 1.5f;
-  /*for(sum = 0; sum < 10; sum++) {
-    float_buf[sum] = 5;
-  } */
+    // Wait for new command
+    SEM_pend (&(info->notifySemObj), SYS_FOREVER);
 
-  BCACHE_wbInv ((Ptr)buf, length, TRUE) ;
+    switch (command) {
+    case (Uint32)CMD_RECV_TARGET_CAND:
+      
+      // Invalidate cache
+      BCACHE_inv ((Ptr)buf, length, TRUE);
 
-	//notify that we are done
-  NOTIFY_notify(ID_GPP,MPCSXFER_IPS_ID,MPCSXFER_IPS_EVENTNO,(Uint32)0);
-	
-  //notify the result
-  NOTIFY_notify(ID_GPP,MPCSXFER_IPS_ID,MPCSXFER_IPS_EVENTNO,(Uint32)sum);
+      // Store target region from GPP
+      target_region.height  = buf[0];
+      target_region.width   = buf[1];
+      target_region.x       = buf[2];
+      target_region.y       = buf[3];
+
+      // For testing
+      buf[0] = 5;
+
+      BCACHE_wbInv ((Ptr)buf, length, TRUE);
+
+      //notify that we are done
+      NOTIFY_notify(ID_GPP,MPCSXFER_IPS_ID,MPCSXFER_IPS_EVENTNO,(Uint32)0);
+
+      // For testing
+      break;
+
+    case CMD_RECV_PDF_REPR:
+
+      // Invalidate cache
+      BCACHE_inv ((Ptr)buf, length, TRUE);
+      
+      // Store PDF representation from GPP
+      float_buf = (float*)buf;
+      memcpy(target_candidate, float_buf, 128 * sizeof(float));
+
+      float_buf[0] = 1.5f;
+
+      BCACHE_wbInv ((Ptr)buf, length, TRUE);
+
+      NOTIFY_notify(ID_GPP,MPCSXFER_IPS_ID,MPCSXFER_IPS_EVENTNO,(Uint32)0);
+
+      command = 0;
+
+      break;
+    }
+
+  }	
 
   return SYS_OK;
 }
@@ -175,15 +213,15 @@ static Void Task_notify (Uint32 eventNo, Ptr arg, Ptr info)
 
     (Void) eventNo ; /* To avoid compiler warning. */
 
-    if (count == 0) {
+    count++;
+    if (count == 1) {
       buf = (unsigned char*)info ;
-      count++;
-    } else {
-      switch( (int)info ) {
-        case 1:
-          // Store target_region and pdf_representation
-          break;
-      }
+    } 
+    else if (count == 2) {
+      length = (int)info;
+    }
+    else {
+      command = (Uint32)info;
     }
 
     SEM_post(&(mpcsInfo->notifySemObj));

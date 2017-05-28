@@ -5,9 +5,15 @@
 
 #include <stdlib.h>
 #include <math.h>
-#include"meanshift.h"
+#include "meanshift.h"
+
+float bin_width;
+struct config cfg;
 
 void Init() {
+    cfg.MaxIter = 8;
+    cfg.num_bins = 16;
+    cfg.pixel_range = 256;
     bin_width = (float)cfg.pixel_range / (float)cfg.num_bins;
 }
 
