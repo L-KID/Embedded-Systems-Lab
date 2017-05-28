@@ -87,7 +87,8 @@ ALL_CFLAGS := $(INCLUDES)                   \
 #   Compiler symbol definitions 
 #   ----------------------------------------------------------------------------
 
-DEFS :=        -DOS_LINUX            \
+DEFS :=        -DARMCC				 \
+			   -DOS_LINUX            \
                -DMAX_DSPS=1          \
                -DMAX_PROCESSORS=2    \
                -DID_GPP=1            \

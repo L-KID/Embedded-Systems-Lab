@@ -19,12 +19,16 @@
 #include "pool_notify.h"
 //#include <pool_notify_os.h>
 
-/*#if defined (__cplusplus)
-extern "C" {
+#if defined (__cplusplus)
+//extern "C" {
 #endif /* defined (__cplusplus) */
 
 /* ------------------------------------ OpenCV Headers                  */
 #include "meanshift.h"
+
+#ifndef ARMCC
+#include "markers.h"
+#endif
 
 
 /*  ============================================================================
@@ -377,6 +381,9 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
     long long start;
     unsigned int i;
 
+    // New variables for tracking
+    cv::VideoCapture frame_capture;
+
 	#if defined(DSP)
     unsigned char *buf_dsp;
 	#endif
@@ -385,13 +392,68 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
     printf ("Entered pool_notify_Execute ()\n") ;
 	#endif
 
-    unit_init();
+    //unit_init();
 
     start = get_usec();
 
 	#if !defined(DSP)
     printf(" Result is %d \n", sum_dsp(pool_notify_DataBuf,pool_notify_BufferSize));
 	#endif
+
+    /* --------------------- TO DO:
+        - Add filename as argument to main
+        - Adjust buffer size according to video size?
+     */
+
+    // New stuff for tracking
+    frame_capture = cv::VideoCapture( "car.avi" );
+
+    cv::Rect rect(228,367,86,58);
+    cv::Mat frame;
+    frame_capture.read(frame);
+    
+    MeanShift ms; // create meanshift obj
+    ms.Init_target_frame(frame,rect); // init the meanshift
+
+    int codec = CV_FOURCC('F', 'L', 'V', '1');
+    cv::VideoWriter writer("tracking_result.avi", codec, 20, cv::Size(frame.cols,frame.rows));
+
+    int TotalFrames = 32;
+    int fcount;
+
+    // Start doing shit here:
+    int frame_status = frame_capture.read(frame);
+    if( 0 == frame_status ) printf("Error!\n");
+    
+    // TO DO: send frame to DSP, increment, check received
+    printf("Matrix type: %d\n", frame.type() );
+    
+    //std::cout << "M = " << std::endl << " " << frame << std::endl << std::endl; 
+
+    // Convert whole matrix to vector
+    std::vector<uchar> array(frame.rows*frame.cols);
+    if (frame.isContinuous()) {
+        array.assign(frame.datastart, frame.dataend);
+    } else {
+        for (int i = 0; i < frame.rows; ++i) {
+            array.insert(array.end(), frame.ptr<uchar>(i), frame.ptr<uchar>(i)+frame.cols);
+        }
+    }    
+    
+    // DEBUGGING: print vector content
+    printf("Vector size: %d\n", array.size());
+    for ( int i = 300000; i < 300050; i++ )
+        printf(" %u ", array[i]);
+    printf("\n");
+
+    // Copy frame into shared buffer
+    std::copy(array.begin() + 300000, array.begin() + 300050, pool_notify_DataBuf);
+
+    writer << frame;
+
+
+
+
 
 	#if defined(DSP)
     POOL_writeback (POOL_makePoolId(processorId, SAMPLE_POOL_ID),
@@ -417,8 +479,8 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
     printf("Sum execution time %lld us.\n", get_usec()-start);
 
 
-    for(i=0;i<10;i++) {
-       printf("Value after: %d\n", (unsigned char)pool_notify_DataBuf[i]);
+    for(i=0;i<50;i++) {
+       printf("Value after: %u\n", (unsigned char)pool_notify_DataBuf[i]);
     }
 
     return status ;
@@ -597,11 +659,11 @@ STATIC Void pool_notify_Notify (Uint32 eventNo, Pvoid arg, Pvoid info)
     } 
     else 
 	{
-        printf(" Result on DSP is %d \n", (int)info);
+        printf("Result on DSP is %d \n", (int)info);
     }
 }
 
 
-/*#if defined (__cplusplus)
-}
+#if defined (__cplusplus)
+//}
 #endif /* defined (__cplusplus) */

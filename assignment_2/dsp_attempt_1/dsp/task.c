@@ -104,11 +104,10 @@ int length;
 int sum_dsp() 
 {
     int sum=0,i;
-    unsigned char b = 1;
     for(i=0;i<length;i++) 
 	{
        sum=sum+buf[i];
-       buf[i] = b++;
+       buf[i]++;
     }
     return sum;
 }
