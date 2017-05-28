@@ -11,14 +11,7 @@ void Init() {
     bin_width = (float)cfg.pixel_range / (float)cfg.num_bins;
 }
 
-/*MeanShift::MeanShift()
-{
-    cfg.MaxIter = 8;
-    cfg.num_bins = 16;
-    cfg.piexl_range = 256;
-    bin_width = cfg.piexl_range / cfg.num_bins;
-}
-
+/*
 void  MeanShift::Init_target_frame(const cv::Mat &frame,const cv::Rect &rect)
 {
     target_Region = rect;
@@ -85,7 +78,7 @@ cv::Mat MeanShift::pdf_representation(const cv::Mat &frame, const cv::Rect &rect
 
 */
 struct Matrix CalWeight(unsigned char** bgr_planes, unsigned char *target_model,
-                            unsigned char *target_candidate, struct Rect rec)
+                            struct Matrix target_candidate, struct Rect rec)
 {
     int k, i, j;
     struct Matrix weight;
@@ -101,21 +94,19 @@ struct Matrix CalWeight(unsigned char** bgr_planes, unsigned char *target_model,
     for(k = 0; k < 3;  k++)
     {
         row_index = rec.y;
-        for(i=0;i<rows;i++)
+        for(i = 0; i < rows; i++)
         {
             col_index = rec.x;
-            for(j=0;j<cols;j++)
+            for(j = 0; j < cols; j++)
             {
                 int curr_pixel = (bgr_planes[k][row_index*rows + col_index]);
                 int bin_value = curr_pixel/bin_width;
-                data[i*rows + j] *= (float)((sqrt(target_model[k*rows + bin_value]/target_candidate[k*rows + bin_value])));
+                data[i*rows + j] *= (float)((sqrt(target_model[k*rows + bin_value]/target_candidate.data[k*rows + bin_value])));
                 col_index++;
             }
             row_index++;
         }
     }
-
-    //struct Matrix weight; //= {rows, cols, data};
 
     weight.rows = rows;
     weight.cols = cols;
@@ -132,16 +123,18 @@ struct Rect track(unsigned char** bgr_planes, unsigned char* target_model, struc
     struct Rect next_rect;
     int iter, i, j;
 
-    for(iter=0;iter<cfg.MaxIter;iter++)
+    for ( iter = 0; iter < cfg.MaxIter; iter++ )
     {
         //target_candidate = pdf_representation(next_frame,target_Region);
-        unsigned char* target_candidate;
+        
+        //TO DO: calculate target_candidate
+        struct Matrix target_candidate;
         struct Matrix weight = CalWeight(bgr_planes, target_model, target_candidate, target_region);
 
         float delta_x = 0.0;
         float sum_wij = 0.0;
         float delta_y = 0.0;
-        float centre = (float)((weight.rows-1)/2.0);
+        float centre = (float)((weight.rows - 1)/2.0);
         double mult = 0.0;
 
         next_rect.x = target_region.x;
@@ -149,32 +142,32 @@ struct Rect track(unsigned char** bgr_planes, unsigned char* target_model, struc
         next_rect.width = target_region.width;
         next_rect.height = target_region.height;
 
-        for(i=0;i<weight.rows;i++)
+        for(i = 0; i < weight.rows; i++)
         {
-            for(j=0;j<weight.cols;j++)
+            for(j = 0; j < weight.cols; j++)
             {
-                float norm_i = (float)(i-centre)/centre;
-                float norm_j = (float)(j-centre)/centre;
-                mult = pow(norm_i,2)+pow(norm_j,2)>1.0?0.0:1.0;
-                delta_x += static_cast<float>(norm_j*weight.at<float>(i,j)*mult);
-                delta_y += static_cast<float>(norm_i*weight.at<float>(i,j)*mult);
-                sum_wij += static_cast<float>(weight.at<float>(i,j)*mult);
+                float norm_i = (float)(i - centre)/centre;
+                float norm_j = (float)(j - centre)/centre;
+                mult = pow(norm_i,2) + pow(norm_j,2) > 1.0 ? 0.0 : 1.0;
+                delta_x += (float)(norm_j * weight.data[i*weight.rows + j] * mult);
+                delta_y += (float)(norm_i * weight.data[i*weight.rows + j] * mult);
+                sum_wij += (float)(weight.data[i*weight.rows + j] * mult);
             }
         }
 
         next_rect.x += (int)((delta_x/sum_wij)*centre);
         next_rect.y += (int)((delta_y/sum_wij)*centre);
 
-/*        if(abs(next_rect.x-target_Region.x)<1 && abs(next_rect.y-target_Region.y)<1)
+        if(abs(next_rect.x-target_region.x)<1 && abs(next_rect.y-target_region.y)<1)
         {
             break;
         }
         else
         {
-            target_Region.x = next_rect.x;
-            target_Region.y = next_rect.y;
+            target_region.x = next_rect.x;
+            target_region.y = next_rect.y;
         }
-    */}
+    }
 
     return next_rect;
 }

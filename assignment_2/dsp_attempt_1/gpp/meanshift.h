@@ -11,9 +11,7 @@ class MeanShift
 {
  private:
     float bin_width;
-    cv::Mat target_model;
-    cv::Rect target_Region;
-
+    
     struct config{
         int num_bins;
         int piexl_range;
@@ -21,6 +19,9 @@ class MeanShift
     }cfg;
 
 public:
+    cv::Mat target_model;
+    cv::Rect target_Region;
+
     MeanShift();
     void Init_target_frame(const cv::Mat &frame,const cv::Rect &rect);
     float Epanechnikov_kernel(cv::Mat &kernel);

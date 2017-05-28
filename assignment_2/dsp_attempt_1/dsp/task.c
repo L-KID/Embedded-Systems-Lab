@@ -112,29 +112,37 @@ int sum_dsp()
     return sum;
 }
 
-
-
 Int Task_execute (Task_TransferInfo * info)
 {
-    int sum;
+  int sum;
+  float* float_buf;
 
-    //wait for semaphore
-	 SEM_pend (&(info->notifySemObj), SYS_FOREVER);
+  //wait for semaphore
+  SEM_pend (&(info->notifySemObj), SYS_FOREVER);
 
 	//invalidate cache
-    BCACHE_inv ((Ptr)buf, length, TRUE) ;
+  BCACHE_inv ((Ptr)buf, length, TRUE) ;
 
-	//call the functionality to be performed by dsp
-    sum = sum_dsp();
-    
-    BCACHE_wbInv ((Ptr)buf, length, TRUE) ;
+  //call the functionality to be performed by dsp
+  //sum = sum_dsp();
+  
+  // Test for floating point
+  float_buf = (float*)buf;
+  float_buf[0] = 2.0f;
+  float_buf[1] = 1.5f;
+  /*for(sum = 0; sum < 10; sum++) {
+    float_buf[sum] = 5;
+  } */
+
+  BCACHE_wbInv ((Ptr)buf, length, TRUE) ;
 
 	//notify that we are done
-    NOTIFY_notify(ID_GPP,MPCSXFER_IPS_ID,MPCSXFER_IPS_EVENTNO,(Uint32)0);
-	//notify the result
-    NOTIFY_notify(ID_GPP,MPCSXFER_IPS_ID,MPCSXFER_IPS_EVENTNO,(Uint32)sum);
+  NOTIFY_notify(ID_GPP,MPCSXFER_IPS_ID,MPCSXFER_IPS_EVENTNO,(Uint32)0);
+	
+  //notify the result
+  NOTIFY_notify(ID_GPP,MPCSXFER_IPS_ID,MPCSXFER_IPS_EVENTNO,(Uint32)sum);
 
-    return SYS_OK;
+  return SYS_OK;
 }
 
 Int Task_delete (Task_TransferInfo * info)
@@ -167,12 +175,15 @@ static Void Task_notify (Uint32 eventNo, Ptr arg, Ptr info)
 
     (Void) eventNo ; /* To avoid compiler warning. */
 
-    count++;
-    if (count==1) {
-        buf =(unsigned char*)info ;
-    }
-    if (count==2) {
-        length = (int)info;
+    if (count == 0) {
+      buf = (unsigned char*)info ;
+      count++;
+    } else {
+      switch( (int)info ) {
+        case 1:
+          // Store target_region and pdf_representation
+          break;
+      }
     }
 
     SEM_post(&(mpcsInfo->notifySemObj));
