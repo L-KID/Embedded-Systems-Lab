@@ -1,11 +1,3 @@
-extern float bin_width;
-
-extern struct config {
-	int num_bins;
-    int pixel_range;
-    int MaxIter;
-} cfg;
-
 struct Rect {
 	int height;
 	int width;

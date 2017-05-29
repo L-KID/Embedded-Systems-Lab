@@ -404,6 +404,40 @@ std::vector<float> float_matrix_to_vector(cv::Mat matrix)
     return vec;
 }
 
+void copy_flota_matrix_to_buffer(cv::Mat matrix, unsigned char* buffer) 
+{
+  float* float_buf = (float*)buffer;
+  if(matrix.isContinuous()) {
+      std::copy((float*)matrix.datastart, (float*)matrix.dataend, float_buf);
+  } else {
+      // Iterate and manually insert. There is probably some faster way to do this.
+      for (int row = 0; row < matrix.rows; row++) {
+          for (int col = 0; col < matrix.cols; col++) {
+              float_buf[row*matrix.rows + col] = matrix.at<float>(row, col);
+          }
+      }
+  }
+}
+
+void copy_uchar_matrix_to_buffer(cv::Mat matrix, unsigned char* buffer) 
+{
+  if(matrix.isContinuous()) {
+      std::copy((unsigned char*)matrix.datastart, (unsigned char*)matrix.dataend, buffer);
+  } else {
+      // Iterate and manually insert. There is probably some faster way to do this.
+      for (int row = 0; row < matrix.rows; row++) {
+          for (int col = 0; col < matrix.cols; col++) {
+              buffer[row*matrix.rows + col] = matrix.at<unsigned char>(row, col);
+          }
+      }
+  }
+}
+
+/*void copy_uchar_vector_to_buffer(std::Vec vector, unsigned char* buffer) 
+{
+  std::copy((unsigned char*)vector.begin(), (unsigned char*)vector.end(), buffer);
+}*/
+
 /** ============================================================================
  *  @func   pool_notify_Execute
  *
@@ -414,13 +448,13 @@ std::vector<float> float_matrix_to_vector(cv::Mat matrix)
  */
 NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 processorId)
 {
-    DSP_STATUS  status    = DSP_SOK ;
+  DSP_STATUS  status    = DSP_SOK ;
 
-    long long start;
-    unsigned int i, row, col;
+  long long start;
+  unsigned int i, row, col;
 
-    // New variables for tracking
-    cv::VideoCapture frame_capture;
+  // New variables for tracking
+  cv::VideoCapture frame_capture;
 
 	#if defined(DSP)
     unsigned char *buf_dsp;
@@ -436,12 +470,17 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
     printf(" Result is %d \n", sum_dsp(pool_notify_DataBuf,pool_notify_BufferSize));
 	#endif
 
+
+
     /* --------------------- TO DO:
         - Add filename as argument to main
         - Adjust buffer size according to video size?
-     */
+    */
 
-    // New stuff for tracking
+
+
+    // Initialize video reading and tracking
+    ////////////////////////////////////////
     frame_capture = cv::VideoCapture("car.avi");
 
     cv::Rect rect(228,367,86,58);
@@ -452,12 +491,16 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
     ms.Init_target_frame(frame, rect); // init the meanshift
     
     // Send target_region to DSP
+    ////////////////////////////
     pool_notify_DataBuf[0] = static_cast<uchar>(rect.height);
     pool_notify_DataBuf[1] = static_cast<uchar>(rect.width);
     pool_notify_DataBuf[2] = static_cast<uchar>(rect.x);
     pool_notify_DataBuf[3] = static_cast<uchar>(rect.y);
+    pool_notify_DataBuf[4] = static_cast<uchar>(frame.rows);
+    pool_notify_DataBuf[5] = static_cast<uchar>(frame.cols);
 
     // For debugging
+    ////////////////
     for (i = 0; i < 4; i++) {
         printf("Buf before: %d\n", pool_notify_DataBuf[i]);
     }
@@ -473,6 +516,7 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
                          AddrType_Usr) ;
 
     // Tell DSP to receive target_region and target_model
+    /////////////////////////////////////////////////////
     status = NOTIFY_notify (processorId, pool_notify_IPS_ID, pool_notify_IPS_EVENTNO, (Uint32)10);
 
     if (DSP_FAILED (status)) 
@@ -483,14 +527,17 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
     }
 
     // Wait for DSP to store data
+    /////////////////////////////
     sem_wait(&sem);
 
     // Invalidate buffer
+    ////////////////////
     POOL_invalidate (POOL_makePoolId(processorId, SAMPLE_POOL_ID),
                                     pool_notify_DataBuf,
                                     pool_notify_BufferSize);
 
     // For debugging
+    ////////////////
     for (i = 0; i < 4; i++) {
         printf("Buf after: %d\n", pool_notify_DataBuf[i]);
     }
@@ -501,6 +548,8 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
     //std::vector<float> vec = float_matrix_to_vector(ms.target_model);
 
     // Must cast to float buffer since PDF Model uses float
+    // Store matrix in shared buffer as array
+    ///////////////////////////////////////////////////////
     float* float_buf = (float*)pool_notify_DataBuf;
     if(ms.target_model.isContinuous()) {
         std::copy((float*)ms.target_model.datastart, (float*)ms.target_model.dataend, float_buf);
@@ -513,6 +562,8 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
         }
     }
 
+    // For debugging
+    ////////////////
     for (i = 0; i < 10; i++) {
         printf("Buffer before: %f\n", float_buf[i]);
     }
@@ -528,29 +579,39 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
                          AddrType_Usr) ;
 
     // Tell DSP to receive target_model
+    ///////////////////////////////////
     NOTIFY_notify (processorId, pool_notify_IPS_ID, pool_notify_IPS_EVENTNO, (Uint32)11);
 
     // Wait for DSP to store data
+    /////////////////////////////
     sem_wait(&sem);
 
     // Invalidate buffer
+    ////////////////////
     POOL_invalidate (POOL_makePoolId(processorId, SAMPLE_POOL_ID),
                                     pool_notify_DataBuf,
                                     pool_notify_BufferSize);
 
+    // For debugging
+    ////////////////
     float_buf = (float*)pool_notify_DataBuf;
     for (i = 0; i < 10; i++) {
         printf("Buffer after: %f\n", float_buf[i]);
     }
 
-    // Continue setting up for writing    
+    // More initialization for writing result
+    /////////////////////////////////////////    
     int codec = CV_FOURCC('F', 'L', 'V', '1');
     cv::VideoWriter writer("tracking_result.avi", codec, 20, cv::Size(frame.cols,frame.rows));
 
     int TotalFrames = 32;
     int fcount;
 
-/*
+
+
+
+    // MAIN LOOP
+    ////////////
     for (fcount = 0; fcount < TotalFrames; ++fcount) {
         // read a frame
         int status = frame_capture.read(frame);
@@ -563,18 +624,41 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
         cv::split(frame, bgr_planes);
 
         // Send each BGR frame separately to DSP
+        for (int i = 0; i < 3; i++) {
+          copy_uchar_matrix_to_buffer(bgr_planes[i], pool_notify_DataBuf);
 
+          POOL_writeback (POOL_makePoolId(processorId, SAMPLE_POOL_ID),
+                    pool_notify_DataBuf,
+                    pool_notify_BufferSize);
+
+          POOL_translateAddr ( POOL_makePoolId(processorId, SAMPLE_POOL_ID),
+                               (void**)&buf_dsp,
+                               AddrType_Dsp,
+                               (Void *) pool_notify_DataBuf,
+                               AddrType_Usr) ;
+
+          // Tell DSP to receive BGR_planes
+          ///////////////////////////////////
+          NOTIFY_notify (processorId, pool_notify_IPS_ID, pool_notify_IPS_EVENTNO, (Uint32)(12 + i));
+
+          // Wait for DSP to store data
+          /////////////////////////////
+          printf("Waiting\n");
+          sem_wait(&sem);
+        }
+
+        // Print size of BGR for debugging
 
 
         cv::Rect ms_rect =  ms.track(frame);
        
         // mark the tracked object in frame
-        cv::rectangle(frame,ms_rect,cv::Scalar(0,0,255),3);
+        //cv::rectangle(frame,ms_rect,cv::Scalar(0,0,255),3);
 
         // write the frame
         writer << frame;
     }
-  */  
+  
     /* Start doing shit here:
     int frame_status = frame_capture.read(frame);
     if( 0 == frame_status ) printf("Error!\n");
@@ -626,16 +710,6 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
 	//#endif
 
     printf("Sum execution time %lld us.\n", get_usec()-start);
-
-    /*for (i = 0; i < 10; i++) {
-        printf("After: Matrix: %f Buffer: %f\n", ms.target_model.at<float>(0,i), float_buf[i]);
-        printf("Buf: %u\n", pool_notify_DataBuf[0]);
-    }*/
-
-    /*float_buf = (float*)pool_notify_DataBuf;
-    for(i=0;i<10;i++) {
-       printf("Value after: %f\n", float_buf[i]);
-    }*/
 
     return status ;
 }
@@ -807,14 +881,19 @@ STATIC Void pool_notify_Notify (Uint32 eventNo, Pvoid arg, Pvoid info)
     printf("Notification %8d \n", (int)info);
 	#endif
     /* Post the semaphore. */
-    if((int)info==0) 
+  if((int)info==0) 
 	{
-        sem_post(&sem);
-    } 
-    else 
+    sem_post(&sem);
+  }
+  else if ((int)info == 20) 
+  {
+    // Send target_candidate
+    
+  } 
+  else // Check for PDF request
 	{
-        printf("Result on DSP is %d \n", (int)info);
-    }
+    printf("Result on DSP is %d \n", (int)info);
+  }
 }
 
 

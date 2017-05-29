@@ -7,10 +7,17 @@
 #include <math.h>
 #include "meanshift.h"
 
-float bin_width;
-struct config cfg;
+//float bin_width;
+//struct config cfg;
 
-void Init() {
+float bin_width;
+struct config {
+    int num_bins;
+    int pixel_range;
+    int MaxIter;
+} cfg;
+
+void MeanShift_Init() {
     cfg.MaxIter = 8;
     cfg.num_bins = 16;
     cfg.pixel_range = 256;
@@ -123,7 +130,7 @@ struct Matrix CalWeight(unsigned char** bgr_planes, unsigned char *target_model,
 
 
 //cv::Rect MeanShift::track(const cv::Mat &next_frame)
-struct Rect track(unsigned char** bgr_planes, unsigned char* target_model, struct Rect target_region)
+struct Rect MeanShift_Track(unsigned char* bgr_planes[3], unsigned char* target_model, struct Rect target_region)
 {
     
     struct Rect next_rect;
@@ -160,6 +167,8 @@ struct Rect track(unsigned char** bgr_planes, unsigned char* target_model, struc
                 sum_wij += (float)(weight.data[i*weight.rows + j] * mult);
             }
         }
+
+        free(weight.data);
 
         next_rect.x += (int)((delta_x/sum_wij)*centre);
         next_rect.y += (int)((delta_y/sum_wij)*centre);
