@@ -47,7 +47,7 @@ struct config {
     int MaxIter;
 } cfg;
 
-struct Rect MeanShift_Track(Task_TransferInfo * info, unsigned char* bgr_planes[3], unsigned char* target_model, struct Rect target_region);
+struct Rect MeanShift_Track(Task_TransferInfo * info, unsigned char* bgr_planes[3], float* target_model);
 void MeanShift_Init();
 
 ////////////////////
@@ -164,6 +164,9 @@ Int Task_execute (Task_TransferInfo * info)
   unsigned char* bgr_planes[3];
   unsigned char rows, cols;
 
+  // The result
+  struct Rect result;
+
   //if(target_candidate == NULL) {
     // Not enough memory available, what to do?
   //}
@@ -260,10 +263,8 @@ Int Task_execute (Task_TransferInfo * info)
       break;
 
     case (Uint32)MSG_TRACK:
-      break;
-
-    default:
-      command = 0;
+      result = MeanShift_Track(info, bgr_planes, target_model);
+      // Send result to GPP
       break;
     }
 
@@ -327,7 +328,7 @@ void MeanShift_Init() {
     bin_width = (float)cfg.pixel_range / (float)cfg.num_bins;
 }
 
-struct Matrix CalWeight(unsigned char** bgr_planes, unsigned char *target_model,
+struct Matrix CalWeight(unsigned char* bgr_planes[3], float* target_model,
                             float* target_candidate, struct Rect rec)
 {
     int k, i, j;
@@ -366,7 +367,7 @@ struct Matrix CalWeight(unsigned char** bgr_planes, unsigned char *target_model,
 }
 
 //cv::Rect MeanShift::track(const cv::Mat &next_frame)
-struct Rect MeanShift_Track(Task_TransferInfo * info, unsigned char* bgr_planes[3], unsigned char* target_model)
+struct Rect MeanShift_Track(Task_TransferInfo * info, unsigned char* bgr_planes[3], float* target_model)
 {
     struct Rect next_rect;
     int iter, i, j;
@@ -379,10 +380,8 @@ struct Rect MeanShift_Track(Task_TransferInfo * info, unsigned char* bgr_planes[
     for ( iter = 0; iter < cfg.MaxIter; iter++ )
     {
         // Ask GPP for target_candidate, give correct info in buffer and wait for GPP
-        buf[0] = (uchar)target_region.height;
-        buf[1] = (uchar)target_region.width;
-        buf[2] = (uchar)target_region.x;
-        buf[3] = (uchar)target_region.y;
+        buf[0] = (unsigned char)target_region.x;
+        buf[1] = (unsigned char)target_region.y;
 
         BCACHE_wbInv ((Ptr)buf, length, TRUE);
         

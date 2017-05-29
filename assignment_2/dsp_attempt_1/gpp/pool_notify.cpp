@@ -451,6 +451,8 @@ void copy_uchar_matrix_to_buffer(cv::Mat matrix, unsigned char* buffer)
 cv::Mat frame;
 cv::Rect rect;
 MeanShift ms;
+Uint8 processorIdGlobal;
+unsigned char* buf_dsp_global;
 
 NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 processorId)
 {
@@ -459,11 +461,15 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
   long long start;
   unsigned int i, row, col;
 
+  // Current solution...
+  processorIdGlobal = processorId;
+
   // New variables for tracking
   cv::VideoCapture frame_capture;
 
 	#if defined(DSP)
     unsigned char *buf_dsp;
+    buf_dsp_global = buf_dsp;
 	#endif
 
 	#ifdef DEBUG
@@ -482,8 +488,6 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
         - Add filename as argument to main
         - Adjust buffer size according to video size?
     */
-
-
 
     // Initialize video reading and tracking
     ////////////////////////////////////////
@@ -507,12 +511,6 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
     pool_notify_DataBuf[3] = static_cast<uchar>(rect.y);
     pool_notify_DataBuf[4] = static_cast<uchar>(frame.rows);
     pool_notify_DataBuf[5] = static_cast<uchar>(frame.cols);
-
-    // For debugging
-    ////////////////
-    for (i = 0; i < 4; i++) {
-        printf("Buf before: %d\n", pool_notify_DataBuf[i]);
-    }
 
     POOL_writeback (POOL_makePoolId(processorId, SAMPLE_POOL_ID),
                     pool_notify_DataBuf,
@@ -545,16 +543,9 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
                                     pool_notify_DataBuf,
                                     pool_notify_BufferSize);
 
-    // For debugging
-    ////////////////
-    for (i = 0; i < 4; i++) {
-        printf("Buf after: %d\n", pool_notify_DataBuf[i]);
-    }
-
     // Send target_model to DSP
     // TO DO: simplify, maybe separate function?
     // Currently not sending size, as PDF Model is fixed to 8x16
-    //std::vector<float> vec = float_matrix_to_vector(ms.target_model);
 
     // Must cast to float buffer since PDF Model uses float
     // Store matrix in shared buffer as array
@@ -569,12 +560,6 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
                 float_buf[row*ms.target_model.rows + col] = ms.target_model.at<float>(row, col);
             }
         }
-    }
-
-    // For debugging
-    ////////////////
-    for (i = 0; i < 10; i++) {
-        printf("Buffer before: %f\n", float_buf[i]);
     }
 
     POOL_writeback (POOL_makePoolId(processorId, SAMPLE_POOL_ID),
@@ -601,13 +586,6 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
                                     pool_notify_DataBuf,
                                     pool_notify_BufferSize);
 
-    // For debugging
-    ////////////////
-    float_buf = (float*)pool_notify_DataBuf;
-    for (i = 0; i < 10; i++) {
-        printf("Buffer after: %f\n", float_buf[i]);
-    }
-
     // More initialization for writing result
     /////////////////////////////////////////    
     int codec = CV_FOURCC('F', 'L', 'V', '1');
@@ -616,12 +594,19 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
     int TotalFrames = 32;
     int fcount;
 
-
-
+    cv::Mat previousFrame;
+    cv::Rect ms_rect = rect;
 
     // MAIN LOOP
     ////////////
-    for (fcount = 0; fcount < TotalFrames; ++fcount) {
+    for (fcount = 0; fcount <= TotalFrames; ++fcount) {
+
+      // If this is not the first frame, store the previous one.
+      if(fcount > 0) {
+        previousFrame = frame;
+      }
+
+      if (fcount <= TotalFrames) {
         // read a frame
         int status = frame_capture.read(frame);
         if( 0 == status ) break;
@@ -656,67 +641,19 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
           sem_wait(&sem);
         }
 
-        // Print size of BGR for debugging
+        // Tell DSP to execute.
 
+        // Wait for rectangle from DSP
+        // Store rectangle from DSP
+      }
 
-        cv::Rect ms_rect =  ms.track(frame);
-       
-        // mark the tracked object in frame
-        //cv::rectangle(frame,ms_rect,cv::Scalar(0,0,255),3);
+      // We already have a frame, so let's write it while DSP calculates
+      if (fcount > 0) {
+        cv::rectangle(previousFrame, ms_rect, cv::Scalar(0, 0, 255), 3);
+        writer << previousFrame;
+      }
 
-        // write the frame
-        writer << frame;
     }
-  
-    /* Start doing shit here:
-    int frame_status = frame_capture.read(frame);
-    if( 0 == frame_status ) printf("Error!\n");
-    
-    // TO DO: send frame to DSP, increment, check received
-    printf("Matrix type: %d\n", frame.type() );
-    
-    //std::cout << "M = " << std::endl << " " << frame << std::endl << std::endl; 
-
-    // Convert whole matrix to vector
-    std::vector<uchar> array(frame.rows*frame.cols);
-    if (frame.isContinuous()) {
-        array.assign(frame.datastart, frame.dataend);
-    } else {
-        for (int i = 0; i < frame.rows; ++i) {
-            array.insert(array.end(), frame.ptr<uchar>(i), frame.ptr<uchar>(i)+frame.cols);
-        }
-    }    
-    
-    // DEBUGGING: print vector content
-    printf("Vector size: %d\n", array.size());
-    for ( int i = 300000; i < 300050; i++ )
-        printf(" %u ", array[i]);
-    printf("\n");
-
-    // Copy frame into shared buffer
-    std::copy(array.begin() + 300000, array.begin() + 300050, pool_notify_DataBuf);
-
-    writer << frame;
-    */
-
-
-
-
-/*	#if defined(DSP)
-    POOL_writeback (POOL_makePoolId(processorId, SAMPLE_POOL_ID),
-                    pool_notify_DataBuf,
-                    pool_notify_BufferSize);
-
-    POOL_translateAddr ( POOL_makePoolId(processorId, SAMPLE_POOL_ID),
-                         (void**)&buf_dsp,
-                         AddrType_Dsp,
-                         (Void *) pool_notify_DataBuf,
-                         AddrType_Usr) ;
-
-    // Tell DSP to execute
-    NOTIFY_notify (processorId,pool_notify_IPS_ID,pool_notify_IPS_EVENTNO,1);
-*/
-	//#endif
 
     printf("Sum execution time %lld us.\n", get_usec()-start);
 
@@ -897,7 +834,7 @@ STATIC Void pool_notify_Notify (Uint32 eventNo, Pvoid arg, Pvoid info)
   else if ((int)info == 20) 
   {
     // Calculate and send target_candidate
-    POOL_invalidate (POOL_makePoolId(processorId, SAMPLE_POOL_ID),
+    POOL_invalidate (POOL_makePoolId(processorIdGlobal, SAMPLE_POOL_ID),
                                     pool_notify_DataBuf,
                                     pool_notify_BufferSize);   
 
@@ -907,6 +844,20 @@ STATIC Void pool_notify_Notify (Uint32 eventNo, Pvoid arg, Pvoid info)
     cv::Mat target_candidate = ms.pdf_representation(frame, rect);
 
     copy_float_matrix_to_buffer(target_candidate, pool_notify_DataBuf);
+
+    POOL_writeback (POOL_makePoolId(processorIdGlobal, SAMPLE_POOL_ID),
+                    pool_notify_DataBuf,
+                    pool_notify_BufferSize);
+
+    POOL_translateAddr ( POOL_makePoolId(processorIdGlobal, SAMPLE_POOL_ID),
+                         (void**)&buf_dsp_global,
+                         AddrType_Dsp,
+                         (Void *) pool_notify_DataBuf,
+                         AddrType_Usr) ;
+
+    // Tell DSP to receive target_candidate
+    ///////////////////////////////////////
+    NOTIFY_notify (processorIdGlobal, pool_notify_IPS_ID, pool_notify_IPS_EVENTNO, (Uint32)30); // Random value currently, it is not checked
   } 
   else // Check for PDF request
 	{
