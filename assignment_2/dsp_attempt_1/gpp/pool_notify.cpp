@@ -26,6 +26,15 @@
 /* ------------------------------------ OpenCV Headers                  */
 #include "meanshift.h"
 
+/* ------------------------------------ Custom defines                  */
+#define MSG_TARGET_REGION     10
+#define MSG_TARGET_MODEL      11
+#define MSG_BLUE_FRAME        12
+#define MSG_GREEN_FRAME       13
+#define MSG_RED_FRAME         14
+#define MSG_TARGET_CANDIDATE  15
+#define MSG_TRACK             16
+
 #ifndef ARMCC
 #include "markers.h"
 #endif
@@ -461,7 +470,7 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
   long long start;
   unsigned int i, row, col;
 
-  // Current solution...
+  // Current solution... should be replaced #fix
   processorIdGlobal = processorId;
 
   // New variables for tracking
@@ -469,7 +478,7 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
 
 	#if defined(DSP)
     unsigned char *buf_dsp;
-    buf_dsp_global = buf_dsp;
+    buf_dsp_global = buf_dsp; // #fix
 	#endif
 
 	#ifdef DEBUG
@@ -481,8 +490,6 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
 	#if !defined(DSP)
     printf(" Result is %d \n", sum_dsp(pool_notify_DataBuf,pool_notify_BufferSize));
 	#endif
-
-
 
     /* --------------------- TO DO:
         - Add filename as argument to main
@@ -503,8 +510,14 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
     
     ms.Init_target_frame(frame, rect); // init the meanshift
     
-    // Send target_region to DSP
-    ////////////////////////////
+    // More initialization for writing result
+    /////////////////////////////////////////    
+    int codec = CV_FOURCC('F', 'L', 'V', '1');
+    cv::VideoWriter writer("tracking_result.avi", codec, 20, cv::Size(frame.cols,frame.rows));
+
+    ///////////////////////////////////////////////
+    // Send target_region and rows + cols to DSP //
+    ///////////////////////////////////////////////
     pool_notify_DataBuf[0] = static_cast<uchar>(rect.height);
     pool_notify_DataBuf[1] = static_cast<uchar>(rect.width);
     pool_notify_DataBuf[2] = static_cast<uchar>(rect.x);
@@ -523,8 +536,7 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
                          AddrType_Usr) ;
 
     // Tell DSP to receive target_region and target_model
-    /////////////////////////////////////////////////////
-    status = NOTIFY_notify (processorId, pool_notify_IPS_ID, pool_notify_IPS_EVENTNO, (Uint32)10);
+    status = NOTIFY_notify (processorId, pool_notify_IPS_ID, pool_notify_IPS_EVENTNO, (Uint32)MSG_TARGET_REGION);
 
     if (DSP_FAILED (status)) 
     {
@@ -533,23 +545,24 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
                  (int)status) ;
     }
 
-    // Wait for DSP to store data
-    /////////////////////////////
+    // Wait for DSP to store target_region
     sem_wait(&sem);
 
-    // Invalidate buffer
-    ////////////////////
+    // Invalidate buffer #fix?
     POOL_invalidate (POOL_makePoolId(processorId, SAMPLE_POOL_ID),
                                     pool_notify_DataBuf,
                                     pool_notify_BufferSize);
 
-    // Send target_model to DSP
-    // TO DO: simplify, maybe separate function?
+    //////////////////////////////
+    // Send target_model to DSP //
+    //////////////////////////////
+
+    // TO DO: simplify, maybe separate function? #fix
     // Currently not sending size, as PDF Model is fixed to 8x16
 
     // Must cast to float buffer since PDF Model uses float
     // Store matrix in shared buffer as array
-    ///////////////////////////////////////////////////////
+
     float* float_buf = (float*)pool_notify_DataBuf;
     if(ms.target_model.isContinuous()) {
         std::copy((float*)ms.target_model.datastart, (float*)ms.target_model.dataend, float_buf);
@@ -585,11 +598,6 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
     POOL_invalidate (POOL_makePoolId(processorId, SAMPLE_POOL_ID),
                                     pool_notify_DataBuf,
                                     pool_notify_BufferSize);
-
-    // More initialization for writing result
-    /////////////////////////////////////////    
-    int codec = CV_FOURCC('F', 'L', 'V', '1');
-    cv::VideoWriter writer("tracking_result.avi", codec, 20, cv::Size(frame.cols,frame.rows));
 
     int TotalFrames = 32;
     int fcount;
