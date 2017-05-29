@@ -378,8 +378,14 @@ struct Rect MeanShift_Track(Task_TransferInfo * info, unsigned char* bgr_planes[
 
     for ( iter = 0; iter < cfg.MaxIter; iter++ )
     {
-        //target_candidate = pdf_representation(next_frame,target_Region);
-        // Ask GPP for target_candidate and wait for it
+        // Ask GPP for target_candidate, give correct info in buffer and wait for GPP
+        buf[0] = (uchar)target_region.height;
+        buf[1] = (uchar)target_region.width;
+        buf[2] = (uchar)target_region.x;
+        buf[3] = (uchar)target_region.y;
+
+        BCACHE_wbInv ((Ptr)buf, length, TRUE);
+        
         NOTIFY_notify(ID_GPP,MPCSXFER_IPS_ID,MPCSXFER_IPS_EVENTNO,(Uint32)20);
         SEM_pend (&(info->notifySemObj), SYS_FOREVER);
 

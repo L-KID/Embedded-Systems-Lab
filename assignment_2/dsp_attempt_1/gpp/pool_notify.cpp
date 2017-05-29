@@ -404,7 +404,7 @@ std::vector<float> float_matrix_to_vector(cv::Mat matrix)
     return vec;
 }
 
-void copy_flota_matrix_to_buffer(cv::Mat matrix, unsigned char* buffer) 
+void copy_float_matrix_to_buffer(cv::Mat matrix, unsigned char* buffer) 
 {
   float* float_buf = (float*)buffer;
   if(matrix.isContinuous()) {
@@ -446,6 +446,12 @@ void copy_uchar_matrix_to_buffer(cv::Mat matrix, unsigned char* buffer)
  *  @modif  None
  *  ============================================================================
  */
+
+// Variables that must be global for notification
+cv::Mat frame;
+cv::Rect rect;
+MeanShift ms;
+
 NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 processorId)
 {
   DSP_STATUS  status    = DSP_SOK ;
@@ -483,11 +489,14 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
     ////////////////////////////////////////
     frame_capture = cv::VideoCapture("car.avi");
 
-    cv::Rect rect(228,367,86,58);
-    cv::Mat frame;
+    //cv::Rect rect(228,367,86,58);
+    rect.x = 228;
+    rect.y = 367;
+    rect.width = 86;
+    rect.height = 58;
+
     frame_capture.read(frame);
     
-    MeanShift ms;
     ms.Init_target_frame(frame, rect); // init the meanshift
     
     // Send target_region to DSP
@@ -887,8 +896,17 @@ STATIC Void pool_notify_Notify (Uint32 eventNo, Pvoid arg, Pvoid info)
   }
   else if ((int)info == 20) 
   {
-    // Send target_candidate
-    
+    // Calculate and send target_candidate
+    POOL_invalidate (POOL_makePoolId(processorId, SAMPLE_POOL_ID),
+                                    pool_notify_DataBuf,
+                                    pool_notify_BufferSize);   
+
+    rect.x = pool_notify_DataBuf[0];
+    rect.y = pool_notify_DataBuf[1];
+
+    cv::Mat target_candidate = ms.pdf_representation(frame, rect);
+
+    copy_float_matrix_to_buffer(target_candidate, pool_notify_DataBuf);
   } 
   else // Check for PDF request
 	{
