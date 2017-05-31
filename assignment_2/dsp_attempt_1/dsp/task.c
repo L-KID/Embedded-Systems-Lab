@@ -146,6 +146,7 @@ Uint32 command;
 
 // This is the rectangle that is around the target
 struct Rect target_region;
+int rows, cols;
 
 Int Task_execute (Task_TransferInfo * info)
 {
@@ -156,13 +157,12 @@ Int Task_execute (Task_TransferInfo * info)
 
   // This is the candidate that we think is the model
   //float* target_candidate = (float*) malloc(128*sizeof(float)); // Currently assuming fixed size (since it is)
-  
+
   // This is the original selection that we're looking to track
   float* target_model = (float*) malloc(128*sizeof(float));     // Currently assuming fixed size (since it is)
 
   // This one holds the blue, green and red frames, respectively
   unsigned char* bgr_planes[3];
-  unsigned char rows, cols;
 
   // The result of the tracking
   struct Rect result;
@@ -170,6 +170,9 @@ Int Task_execute (Task_TransferInfo * info)
   //if(target_candidate == NULL) {
     // Not enough memory available, what to do?
   //}
+
+  // Wait for initial data from GPP
+  SEM_pend (&(info->notifySemObj), SYS_FOREVER);
 
   MeanShift_Init();
 
@@ -179,7 +182,7 @@ Int Task_execute (Task_TransferInfo * info)
     SEM_pend (&(info->notifySemObj), SYS_FOREVER);
 
     switch (command) {
-    case (Uint32)MSG_TARGET_REGION:
+    /*case (Uint32)MSG_TARGET_REGION:
       
       // Invalidate cache
       BCACHE_inv ((Ptr)buf, length, TRUE);
@@ -205,7 +208,7 @@ Int Task_execute (Task_TransferInfo * info)
       //notify that we are done
       NOTIFY_notify(ID_GPP,MPCSXFER_IPS_ID,MPCSXFER_IPS_EVENTNO,(Uint32)0);
       break;
-
+*/
     case (Uint32)MSG_TARGET_MODEL:
 
       // Invalidate cache
@@ -215,10 +218,12 @@ Int Task_execute (Task_TransferInfo * info)
       float_buf = (float*)buf;
       memcpy(target_model, float_buf, 128 * sizeof(float));
 
+      float_buf[1] = 1.5f;
+
       // For testing
       //float_buf[0] = 1.5f;
 
-      //BCACHE_wbInv ((Ptr)buf, length, TRUE);
+      BCACHE_wbInv ((Ptr)buf, length, TRUE);
 
       NOTIFY_notify(ID_GPP,MPCSXFER_IPS_ID,MPCSXFER_IPS_EVENTNO,(Uint32)0);
       break;
@@ -266,8 +271,11 @@ Int Task_execute (Task_TransferInfo * info)
       result = MeanShift_Track(info, bgr_planes, target_model);
 
       // Send result to GPP
-      buf[0] = (unsigned char)result.x;
-      buf[1] = (unsigned char)result.y;
+      NOTIFY_notify(ID_GPP,MPCSXFER_IPS_ID,MPCSXFER_IPS_EVENTNO,(int)result.x);
+      NOTIFY_notify(ID_GPP,MPCSXFER_IPS_ID,MPCSXFER_IPS_EVENTNO,(int)result.y);
+
+      //buf[0] = (unsigned char)result.x;
+      //buf[1] = (unsigned char)result.y;
 
       // Tell GPP that tracking is done
       NOTIFY_notify(ID_GPP,MPCSXFER_IPS_ID,MPCSXFER_IPS_EVENTNO,(Uint32)0);
@@ -313,16 +321,43 @@ static Void Task_notify (Uint32 eventNo, Ptr arg, Ptr info)
     count++;
     if (count == 1) {
       buf = (unsigned char*)info ;
+      SEM_post(&(mpcsInfo->notifySemObj));
     } 
     else if (count == 2) {
       length = (int)info;
+      SEM_post(&(mpcsInfo->notifySemObj));
+    }
+    else if (count <= 8) { // Receive 6 data...
+      switch(count) {
+      case 3:
+        target_region.height = (int)info;
+        break;
+      case 4:
+        target_region.width = (int)info;
+        break;
+      case 5:
+        target_region.x = (int)info;
+        break;
+      case 6:
+        target_region.y = (int)info;
+        break;
+      case 7:
+        rows = (int)info;
+        break;
+      case 8:
+        cols = (int)info;
+        SEM_post(&(mpcsInfo->notifySemObj));
+        break;
+      }
+
+      // Confirm reception to GPP
+      NOTIFY_notify(ID_GPP,MPCSXFER_IPS_ID,MPCSXFER_IPS_EVENTNO,(int)0);
     }
     else {
       command = (Uint32)info;
+      SEM_post(&(mpcsInfo->notifySemObj));
     }
-
-    SEM_post(&(mpcsInfo->notifySemObj));
-}
+  }
 
 //////////////////////////////////////
 // MeanShift Functions

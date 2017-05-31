@@ -468,7 +468,7 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
   DSP_STATUS  status    = DSP_SOK ;
 
   long long start;
-  unsigned int i, row, col;
+  int row, col;
 
   // Current solution... should be replaced #fix
   processorIdGlobal = processorId;
@@ -486,10 +486,6 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
 	#endif
 
     start = get_usec();
-
-	#if !defined(DSP)
-    printf(" Result is %d \n", sum_dsp(pool_notify_DataBuf,pool_notify_BufferSize));
-	#endif
 
     /* --------------------- TO DO:
         - Add filename as argument to main
@@ -518,6 +514,29 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
     ///////////////////////////////////////////////
     // Send target_region and rows + cols to DSP //
     ///////////////////////////////////////////////
+    // Attempt 2: send by notify...
+    ///////////////////////////////////////////////
+    // Tell DSP to receive target_region and target_model
+
+    status = NOTIFY_notify (processorId, pool_notify_IPS_ID, pool_notify_IPS_EVENTNO, (int)rect.height);
+    sem_wait(&sem);
+
+    status = NOTIFY_notify (processorId, pool_notify_IPS_ID, pool_notify_IPS_EVENTNO, (int)rect.width);
+    sem_wait(&sem);
+    
+    status = NOTIFY_notify (processorId, pool_notify_IPS_ID, pool_notify_IPS_EVENTNO, (int)rect.x);
+    sem_wait(&sem);
+    
+    status = NOTIFY_notify (processorId, pool_notify_IPS_ID, pool_notify_IPS_EVENTNO, (int)rect.y);
+    sem_wait(&sem);
+    
+    status = NOTIFY_notify (processorId, pool_notify_IPS_ID, pool_notify_IPS_EVENTNO, (int)frame.rows);
+    sem_wait(&sem);
+    
+    status = NOTIFY_notify (processorId, pool_notify_IPS_ID, pool_notify_IPS_EVENTNO, (int)frame.cols);
+    sem_wait(&sem);
+
+    /*
     pool_notify_DataBuf[0] = static_cast<uchar>(rect.height);
     pool_notify_DataBuf[1] = static_cast<uchar>(rect.width);
     pool_notify_DataBuf[2] = static_cast<uchar>(rect.x);
@@ -546,12 +565,13 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
     }
 
     // Wait for DSP to store target_region
-    sem_wait(&sem);
+    //sem_wait(&sem);
 
     // Invalidate buffer #fix?
-    POOL_invalidate (POOL_makePoolId(processorId, SAMPLE_POOL_ID),
+    /*POOL_invalidate (POOL_makePoolId(processorId, SAMPLE_POOL_ID),
                                     pool_notify_DataBuf,
                                     pool_notify_BufferSize);
+*/
 
     //////////////////////////////
     // Send target_model to DSP //
@@ -585,19 +605,29 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
                          (Void *) pool_notify_DataBuf,
                          AddrType_Usr) ;
 
+    for(int i = 0; i < 10; i++) {
+      printf(" %f ", float_buf[i]);
+    }
+    printf("\n");
+
     // Tell DSP to receive target_model
     ///////////////////////////////////
-    NOTIFY_notify (processorId, pool_notify_IPS_ID, pool_notify_IPS_EVENTNO, (Uint32)11);
+    status = NOTIFY_notify (processorId, pool_notify_IPS_ID, pool_notify_IPS_EVENTNO, (Uint32)11);
+    if (DSP_FAILED (status)) 
+    {
+        printf ("NOTIFY_notify () DataBuf failed."
+                " Status = [0x%x]\n",
+                 (int)status) ;
+    }
 
     // Wait for DSP to store data
     /////////////////////////////
     sem_wait(&sem);
 
-    // Invalidate buffer
-    ////////////////////
-    POOL_invalidate (POOL_makePoolId(processorId, SAMPLE_POOL_ID),
-                                    pool_notify_DataBuf,
-                                    pool_notify_BufferSize);
+    for(int i = 0; i < 10; i++) {
+      printf(" %f ", float_buf[i]);
+    }
+    printf("\n");
 
     int TotalFrames = 32;
     int fcount;
@@ -605,14 +635,16 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
     cv::Mat previousFrame;
     cv::Rect ms_rect = rect;
 
+    printf("We are here\n");
+
     // MAIN LOOP
     ////////////
     for (fcount = 0; fcount <= TotalFrames; ++fcount) {
 
       // If this is not the first frame, store the previous one.
-      if(fcount > 0) {
+      /*if(fcount > 0) {
         previousFrame = frame;
-      }
+      }*/
 
       if (fcount < TotalFrames) {
         // read a frame
@@ -641,7 +673,13 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
 
           // Tell DSP to receive BGR_planes
           ///////////////////////////////////
-          NOTIFY_notify (processorId, pool_notify_IPS_ID, pool_notify_IPS_EVENTNO, (Uint32)(12 + i));
+          status = NOTIFY_notify (processorId, pool_notify_IPS_ID, pool_notify_IPS_EVENTNO, (Uint32)(12 + i));
+          if (DSP_FAILED (status)) 
+          {
+              printf ("NOTIFY_notify () DataBuf failed."
+                      " Status = [0x%x]\n",
+                       (int)status) ;
+          }
 
           // Wait for DSP to store data
           /////////////////////////////
@@ -650,25 +688,26 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
         }
 
         // Tell DSP to execute.
-        NOTIFY_notify (processorId, pool_notify_IPS_ID, pool_notify_IPS_EVENTNO, (Uint32)16);
+        //NOTIFY_notify (processorId, pool_notify_IPS_ID, pool_notify_IPS_EVENTNO, (Uint32)16);
       }
 
       // We already have a frame, so let's write it while DSP calculates
       // Only if we already have calculated one frame though
-      if (fcount > 0) {
+      /*if (fcount > 0) {
         cv::rectangle(previousFrame, ms_rect, cv::Scalar(0, 0, 255), 3);
         writer << previousFrame;
       }
 
       if (fcount < TotalFrames) {
         // Wait for rectangle from DSP
+        printf("Waiting for result\n");
         sem_wait(&sem);
 
         // Store rectangle from DSP
         POOL_invalidate (POOL_makePoolId(processorId, SAMPLE_POOL_ID),
                                     pool_notify_DataBuf,
                                     pool_notify_BufferSize);
-      }
+      }*/
     }
 
     printf("Sum execution time %lld us.\n", get_usec()-start);
@@ -877,11 +916,12 @@ STATIC Void pool_notify_Notify (Uint32 eventNo, Pvoid arg, Pvoid info)
     // Tell DSP to receive target_candidate
     ///////////////////////////////////////
     NOTIFY_notify (processorIdGlobal, pool_notify_IPS_ID, pool_notify_IPS_EVENTNO, (Uint32)30); // Random value currently, it is not checked
-  } 
-  else 
-	{
-    printf("Result on DSP is %d \n", (int)info);
+  
+    sem_post(&sem);
   }
+  else {
+    sem_post(&sem);
+  } 
 }
 
 
