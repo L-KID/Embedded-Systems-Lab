@@ -1,12 +1,12 @@
 struct Rect {
-	Uint16 height;
-	Uint16 width;
-	Uint16 x;
-	Uint16 y;
+	int height;
+	int width;
+	int x;
+	int y;
 };
 
 struct Matrix {
-	Uint16 rows;
-	Uint16 cols;
+	int rows;
+	int cols;
 	float* data;
 };

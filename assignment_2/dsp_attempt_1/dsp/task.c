@@ -266,8 +266,8 @@ Int Task_execute (Task_TransferInfo * info)
       result = MeanShift_Track(info, bgr_planes, target_model);
 
       // Send result to GPP
-      buf[0] = result.x;
-      buf[1] = result.y;
+      buf[0] = (unsigned char)result.x;
+      buf[1] = (unsigned char)result.y;
 
       // Tell GPP that tracking is done
       NOTIFY_notify(ID_GPP,MPCSXFER_IPS_ID,MPCSXFER_IPS_EVENTNO,(Uint32)0);
@@ -340,10 +340,10 @@ struct Matrix CalWeight(unsigned char* bgr_planes[3], float* target_model,
 {
     int k, i, j;
     struct Matrix weight;
-    Uint16 rows = rec.height;
-    Uint16 cols = rec.width;
-    Uint16 row_index = rec.y;
-    Uint16 col_index = rec.x;
+    int rows = rec.height;
+    int cols = rec.width;
+    int row_index = rec.y;
+    int col_index = rec.x;
 
     //cv::Mat weight(rows,cols,CV_32F,cv::Scalar(1.0000));
     float *data = (float*)malloc(rows*cols*sizeof(float));

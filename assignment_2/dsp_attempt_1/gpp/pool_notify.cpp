@@ -668,9 +668,6 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
         POOL_invalidate (POOL_makePoolId(processorId, SAMPLE_POOL_ID),
                                     pool_notify_DataBuf,
                                     pool_notify_BufferSize);
-
-        ms_rect.x = pool_notify_DataBuf[0];
-        ms_rect.y = pool_notify_DataBuf[1];
       }
     }
 
