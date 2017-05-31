@@ -340,10 +340,10 @@ struct Matrix CalWeight(unsigned char* bgr_planes[3], float* target_model,
 {
     int k, i, j;
     struct Matrix weight;
-    int rows = rec.height;
-    int cols = rec.width;
-    int row_index = rec.y;
-    int col_index = rec.x;
+    Uint16 rows = rec.height;
+    Uint16 cols = rec.width;
+    Uint16 row_index = rec.y;
+    Uint16 col_index = rec.x;
 
     //cv::Mat weight(rows,cols,CV_32F,cv::Scalar(1.0000));
     float *data = (float*)malloc(rows*cols*sizeof(float));
