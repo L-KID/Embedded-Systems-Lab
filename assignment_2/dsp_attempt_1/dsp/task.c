@@ -164,7 +164,7 @@ Int Task_execute (Task_TransferInfo * info)
   unsigned char* bgr_planes[3];
   unsigned char rows, cols;
 
-  // The result
+  // The result of the tracking
   struct Rect result;
 
   //if(target_candidate == NULL) {
@@ -264,7 +264,14 @@ Int Task_execute (Task_TransferInfo * info)
 
     case (Uint32)MSG_TRACK:
       result = MeanShift_Track(info, bgr_planes, target_model);
+
       // Send result to GPP
+      buf[0] = result.x;
+      buf[1] = result.y;
+
+      // Tell GPP that tracking is done
+      NOTIFY_notify(ID_GPP,MPCSXFER_IPS_ID,MPCSXFER_IPS_EVENTNO,(Uint32)0);
+
       break;
     }
 

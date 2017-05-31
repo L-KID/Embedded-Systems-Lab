@@ -614,7 +614,7 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
         previousFrame = frame;
       }
 
-      if (fcount <= TotalFrames) {
+      if (fcount < TotalFrames) {
         // read a frame
         int status = frame_capture.read(frame);
         if( 0 == status ) break;
@@ -650,17 +650,28 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
         }
 
         // Tell DSP to execute.
-
-        // Wait for rectangle from DSP
-        // Store rectangle from DSP
+        NOTIFY_notify (processorId, pool_notify_IPS_ID, pool_notify_IPS_EVENTNO, (Uint32)16);
       }
 
       // We already have a frame, so let's write it while DSP calculates
+      // Only if we already have calculated one frame though
       if (fcount > 0) {
         cv::rectangle(previousFrame, ms_rect, cv::Scalar(0, 0, 255), 3);
         writer << previousFrame;
       }
 
+      if (fcount < TotalFrames) {
+        // Wait for rectangle from DSP
+        sem_wait(&sem);
+
+        // Store rectangle from DSP
+        POOL_invalidate (POOL_makePoolId(processorId, SAMPLE_POOL_ID),
+                                    pool_notify_DataBuf,
+                                    pool_notify_BufferSize);
+
+        ms_rect.x = pool_notify_DataBuf[0];
+        ms_rect.y = pool_notify_DataBuf[1];
+      }
     }
 
     printf("Sum execution time %lld us.\n", get_usec()-start);
@@ -846,11 +857,14 @@ STATIC Void pool_notify_Notify (Uint32 eventNo, Pvoid arg, Pvoid info)
                                     pool_notify_DataBuf,
                                     pool_notify_BufferSize);   
 
+    // Retrieve current rectangle position from DSP
     rect.x = pool_notify_DataBuf[0];
     rect.y = pool_notify_DataBuf[1];
 
+    // Calculate the target_candidate
     cv::Mat target_candidate = ms.pdf_representation(frame, rect);
 
+    // Send the target_candidate to the DSP
     copy_float_matrix_to_buffer(target_candidate, pool_notify_DataBuf);
 
     POOL_writeback (POOL_makePoolId(processorIdGlobal, SAMPLE_POOL_ID),
@@ -867,7 +881,7 @@ STATIC Void pool_notify_Notify (Uint32 eventNo, Pvoid arg, Pvoid info)
     ///////////////////////////////////////
     NOTIFY_notify (processorIdGlobal, pool_notify_IPS_ID, pool_notify_IPS_EVENTNO, (Uint32)30); // Random value currently, it is not checked
   } 
-  else // Check for PDF request
+  else 
 	{
     printf("Result on DSP is %d \n", (int)info);
   }
