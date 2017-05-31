@@ -1,0 +1,9 @@
+Windows
+• Get the driver from http://beagleboard.org/getting-started, and install it. or
+https://learn.adafruit.com/ssh-to-beaglebone-black-over-usb/installing-drivers-windows
+• Then go to the Network and Sharing center:
+? The Ethernet Gadget should already be a part of a an unidentified network there.
+? If you have multiple unidentified networks, find the one that has 'Linux USB
+Ethernet/RNDIS...' in the details.
+• Manually set the IPv4 address to 192.168.0.X/24 (X should be something other than 202).
+• Using putty (or your tool of preference) SSH as root to 192.168.0.202
