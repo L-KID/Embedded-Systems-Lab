@@ -338,6 +338,8 @@ NORMAL_API DSP_STATUS pool_notify_Create (	IN Char8 * dspExecutable,
     return status ;
 }
 
+cv::Mat kernel;
+
 void unit_init(void) 
 {
     unsigned int i;
@@ -462,6 +464,7 @@ cv::Rect rect;
 MeanShift ms;
 Uint8 processorIdGlobal;
 unsigned char* buf_dsp_global;
+bool dsp_executing = false, dsp_done = false;
 
 NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 processorId)
 {
@@ -568,7 +571,7 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
     //sem_wait(&sem);
 
     // Invalidate buffer #fix?
-    /*POOL_invalidate (POOL_makePoolId(processorId, SAMPLE_POOL_ID),
+    POOL_invalidate (POOL_makePoolId(processorId, SAMPLE_POOL_ID),
                                     pool_notify_DataBuf,
                                     pool_notify_BufferSize);
 */
@@ -673,6 +676,13 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
 
           // Tell DSP to receive BGR_planes
           ///////////////////////////////////
+
+          // Debug
+          for(int j = 100; j < 110; j++) {
+            printf(" %d ", bgr_planes[i].at<unsigned char>(0,j));
+          }
+          printf("\n");
+
           status = NOTIFY_notify (processorId, pool_notify_IPS_ID, pool_notify_IPS_EVENTNO, (Uint32)(12 + i));
           if (DSP_FAILED (status)) 
           {
@@ -685,15 +695,62 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
           /////////////////////////////
           printf("Waiting\n");
           sem_wait(&sem);
+
+          // Debug
+          for(int j = 100; j < 110; j++) {
+            printf(" %d ", bgr_planes[i].at<unsigned char>(0,j));
+          }
+          printf("\n");
+
         }
 
-        // Tell DSP to execute.
-        //NOTIFY_notify (processorId, pool_notify_IPS_ID, pool_notify_IPS_EVENTNO, (Uint32)16);
+        // Tell DSP to execute and wait
+        dsp_executing = true;
+        NOTIFY_notify (processorId, pool_notify_IPS_ID, pool_notify_IPS_EVENTNO, (Uint32)16);
+        printf("Let's execute\n");
+
+        while(dsp_executing) {
+          sem_wait(&sem);
+          printf("Sending target_candidate\n");
+
+          // Calculate and send target_candidate
+          POOL_invalidate (POOL_makePoolId(processorId, SAMPLE_POOL_ID),
+                                          pool_notify_DataBuf,
+                                          pool_notify_BufferSize);   
+
+          // Calculate the target_candidate
+          cv::Mat target_candidate = ms.pdf_representation(frame, rect);
+
+          // Send the target_candidate to the DSP
+          copy_float_matrix_to_buffer(target_candidate, pool_notify_DataBuf);
+
+          POOL_writeback (POOL_makePoolId(processorId, SAMPLE_POOL_ID),
+                          pool_notify_DataBuf,
+                          pool_notify_BufferSize);
+
+          POOL_translateAddr ( POOL_makePoolId(processorId, SAMPLE_POOL_ID),
+                               (void**)&buf_dsp,
+                               AddrType_Dsp,
+                               (Void *) pool_notify_DataBuf,
+                               AddrType_Usr) ;
+
+          printf("Here\n");
+
+          // Tell DSP to receive target_candidate
+          status = NOTIFY_notify (processorId, pool_notify_IPS_ID, pool_notify_IPS_EVENTNO, (Uint32)30); // Random value currently, it is not checked
+          if (DSP_FAILED (status)) 
+          {
+              printf ("NOTIFY_notify () DataBuf failed."
+                      " Status = [0x%x]\n",
+                       (int)status) ;
+          }
+        }
       }
 
       // We already have a frame, so let's write it while DSP calculates
       // Only if we already have calculated one frame though
       /*if (fcount > 0) {
+
         cv::rectangle(previousFrame, ms_rect, cv::Scalar(0, 0, 255), 3);
         writer << previousFrame;
       }
@@ -710,7 +767,7 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
       }*/
     }
 
-    printf("Sum execution time %lld us.\n", get_usec()-start);
+    printf("Sum execution time %lld us.unsigned char\n", get_usec()-start);
 
     return status ;
 }
@@ -882,46 +939,107 @@ STATIC Void pool_notify_Notify (Uint32 eventNo, Pvoid arg, Pvoid info)
     printf("Notification %8d \n", (int)info);
 	#endif
     /* Post the semaphore. */
-  if((int)info==0) 
-	{
-    sem_post(&sem);
+
+  static int count = 0;
+
+  if (dsp_executing) {
+    count++;
+
+    // It is done, result will come
+    if ((int)info == 0) {
+      count = 0;
+      dsp_executing = false;
+      dsp_done = true;
+    }
+    else if (count == 1) {
+      rect.x = (int)info;
+    } else if (count == 2) { // receive y
+      rect.y = (int)info;
+      count = 0;
+      sem_post(&sem); // Let execute
+    }
+
+      // Calculate and send target_candidate
+      /*POOL_invalidate (POOL_makePoolId(processorIdGlobal, SAMPLE_POOL_ID),
+                                      pool_notify_DataBuf,
+                                      pool_notify_BufferSize);   
+
+      // Calculate the target_candidate
+      cv::Mat target_candidate = ms.pdf_representation(frame, rect);
+
+      // Send the target_candidate to the DSP
+      copy_float_matrix_to_buffer(target_candidate, pool_notify_DataBuf);
+
+      POOL_writeback (POOL_makePoolId(processorIdGlobal, SAMPLE_POOL_ID),
+                      pool_notify_DataBuf,
+                      pool_notify_BufferSize);
+
+      POOL_translateAddr ( POOL_makePoolId(processorIdGlobal, SAMPLE_POOL_ID),
+                           (void**)&buf_dsp_global,
+                           AddrType_Dsp,
+                           (Void *) pool_notify_DataBuf,
+                           AddrType_Usr) ;
+
+      // Tell DSP to receive target_candidate
+      NOTIFY_notify (processorIdGlobal, pool_notify_IPS_ID, pool_notify_IPS_EVENTNO, (Uint32)30); // Random value currently, it is not checked
+    
+      count = 0;
+    } else if (dsp_done) {
+      count++;
+
+      if(count == 1) {
+        printf("Result x: %d\n", (int)info);
+      } else if (count == 2) {
+        printf("Result y: %d\n", (int)info);
+        count = 0;
+        dsp_done = false;
+        sem_post(&sem);
+      }
+    }*/
+    
+    /*
+    if ((int)info == 20) 
+    {
+      // Calculate and send target_candidate
+      POOL_invalidate (POOL_makePoolId(processorIdGlobal, SAMPLE_POOL_ID),
+                                      pool_notify_DataBuf,
+                                      pool_notify_BufferSize);   
+
+      // Retrieve current rectangle position from DSP
+      rect.x = pool_notify_DataBuf[0];
+      rect.y = pool_notify_DataBuf[1];
+
+      // Calculate the target_candidate
+      cv::Mat target_candidate = ms.pdf_representation(frame, rect);
+
+      // Send the target_candidate to the DSP
+      copy_float_matrix_to_buffer(target_candidate, pool_notify_DataBuf);
+
+      POOL_writeback (POOL_makePoolId(processorIdGlobal, SAMPLE_POOL_ID),
+                      pool_notify_DataBuf,
+                      pool_notify_BufferSize);
+
+      POOL_translateAddr ( POOL_makePoolId(processorIdGlobal, SAMPLE_POOL_ID),
+                           (void**)&buf_dsp_global,
+                           AddrType_Dsp,
+                           (Void *) pool_notify_DataBuf,
+                           AddrType_Usr) ;
+
+      // Tell DSP to receive target_candidate
+      ///////////////////////////////////////
+      NOTIFY_notify (processorIdGlobal, pool_notify_IPS_ID, pool_notify_IPS_EVENTNO, (Uint32)30); // Random value currently, it is not checked
+    
+      sem_post(&sem);
+    }*/
+  } else {
+    if((int)info==0) 
+    {
+      sem_post(&sem);
+    }
+    else {
+      //sem_post(&sem);
+    }
   }
-  else if ((int)info == 20) 
-  {
-    // Calculate and send target_candidate
-    POOL_invalidate (POOL_makePoolId(processorIdGlobal, SAMPLE_POOL_ID),
-                                    pool_notify_DataBuf,
-                                    pool_notify_BufferSize);   
-
-    // Retrieve current rectangle position from DSP
-    rect.x = pool_notify_DataBuf[0];
-    rect.y = pool_notify_DataBuf[1];
-
-    // Calculate the target_candidate
-    cv::Mat target_candidate = ms.pdf_representation(frame, rect);
-
-    // Send the target_candidate to the DSP
-    copy_float_matrix_to_buffer(target_candidate, pool_notify_DataBuf);
-
-    POOL_writeback (POOL_makePoolId(processorIdGlobal, SAMPLE_POOL_ID),
-                    pool_notify_DataBuf,
-                    pool_notify_BufferSize);
-
-    POOL_translateAddr ( POOL_makePoolId(processorIdGlobal, SAMPLE_POOL_ID),
-                         (void**)&buf_dsp_global,
-                         AddrType_Dsp,
-                         (Void *) pool_notify_DataBuf,
-                         AddrType_Usr) ;
-
-    // Tell DSP to receive target_candidate
-    ///////////////////////////////////////
-    NOTIFY_notify (processorIdGlobal, pool_notify_IPS_ID, pool_notify_IPS_EVENTNO, (Uint32)30); // Random value currently, it is not checked
-  
-    sem_post(&sem);
-  }
-  else {
-    sem_post(&sem);
-  } 
 }
 
 

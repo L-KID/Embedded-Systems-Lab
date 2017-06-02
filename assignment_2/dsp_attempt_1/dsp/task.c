@@ -231,7 +231,12 @@ Int Task_execute (Task_TransferInfo * info)
     case (Uint32)MSG_BLUE_FRAME:
       // Store blue frame
       BCACHE_inv ((Ptr)buf, length, TRUE);
+      bgr_planes[0] = (unsigned char*) malloc(rows * cols * sizeof(unsigned char));
       memcpy(bgr_planes[0], buf, rows * cols * sizeof(unsigned char) );
+
+      // For debugging
+      memcpy(buf, bgr_planes[0], rows * cols * sizeof(unsigned char) );
+      BCACHE_wbInv( (Ptr)buf, length, TRUE);
 
       // Tell GPP that DSP is ready
       NOTIFY_notify(ID_GPP,MPCSXFER_IPS_ID,MPCSXFER_IPS_EVENTNO,(Uint32)0);
@@ -240,8 +245,13 @@ Int Task_execute (Task_TransferInfo * info)
     case (Uint32)MSG_GREEN_FRAME:
       // Store green frame
       BCACHE_inv ((Ptr)buf, length, TRUE);
+      bgr_planes[1] = (unsigned char*) malloc(rows * cols * sizeof(unsigned char));
       memcpy(bgr_planes[1], buf, rows * cols * sizeof(unsigned char) );
       
+      // For debugging
+      memcpy(buf, bgr_planes[1], rows * cols * sizeof(unsigned char) );
+      BCACHE_wbInv( (Ptr)buf, length, TRUE);
+
       // Tell GPP that DSP is ready  
       NOTIFY_notify(ID_GPP,MPCSXFER_IPS_ID,MPCSXFER_IPS_EVENTNO,(Uint32)0);
       break;
@@ -249,7 +259,12 @@ Int Task_execute (Task_TransferInfo * info)
     case (Uint32)MSG_RED_FRAME:
       // Store red frame
       BCACHE_inv ((Ptr)buf, length, TRUE);
+      bgr_planes[2] = (unsigned char*) malloc(rows * cols * sizeof(unsigned char));
       memcpy(bgr_planes[2], buf, rows * cols * sizeof(unsigned char) );
+
+      // For debugging
+      memcpy(buf, bgr_planes[2], rows * cols * sizeof(unsigned char) );
+      BCACHE_wbInv( (Ptr)buf, length, TRUE);
 
       // Tell GPP that DSP is ready
       NOTIFY_notify(ID_GPP,MPCSXFER_IPS_ID,MPCSXFER_IPS_EVENTNO,(Uint32)0);
@@ -270,15 +285,15 @@ Int Task_execute (Task_TransferInfo * info)
     case (Uint32)MSG_TRACK:
       result = MeanShift_Track(info, bgr_planes, target_model);
 
+      // Tell GPP that tracking is done
+      NOTIFY_notify(ID_GPP,MPCSXFER_IPS_ID,MPCSXFER_IPS_EVENTNO,(Uint32)0);
+
       // Send result to GPP
       NOTIFY_notify(ID_GPP,MPCSXFER_IPS_ID,MPCSXFER_IPS_EVENTNO,(int)result.x);
       NOTIFY_notify(ID_GPP,MPCSXFER_IPS_ID,MPCSXFER_IPS_EVENTNO,(int)result.y);
 
       //buf[0] = (unsigned char)result.x;
       //buf[1] = (unsigned char)result.y;
-
-      // Tell GPP that tracking is done
-      NOTIFY_notify(ID_GPP,MPCSXFER_IPS_ID,MPCSXFER_IPS_EVENTNO,(Uint32)0);
 
       break;
     }
@@ -422,12 +437,17 @@ struct Rect MeanShift_Track(Task_TransferInfo * info, unsigned char* bgr_planes[
     for ( iter = 0; iter < cfg.MaxIter; iter++ )
     {
         // Ask GPP for target_candidate, give correct info in buffer and wait for GPP
-        buf[0] = (unsigned char)target_region.x;
-        buf[1] = (unsigned char)target_region.y;
+        //buf[0] = (unsigned char)target_region.x;
+        //buf[1] = (unsigned char)target_region.y;
 
-        BCACHE_wbInv ((Ptr)buf, length, TRUE);
+        //BCACHE_wbInv ((Ptr)buf, length, TRUE);
         
-        NOTIFY_notify(ID_GPP,MPCSXFER_IPS_ID,MPCSXFER_IPS_EVENTNO,(Uint32)20);
+        //NOTIFY_notify(ID_GPP,MPCSXFER_IPS_ID,MPCSXFER_IPS_EVENTNO,(Uint32)20);
+        
+        // Send target_region to GPP, wait for target_candidate in return
+        NOTIFY_notify(ID_GPP,MPCSXFER_IPS_ID,MPCSXFER_IPS_EVENTNO,(int)5);
+        NOTIFY_notify(ID_GPP,MPCSXFER_IPS_ID,MPCSXFER_IPS_EVENTNO,(int)10);
+        
         SEM_pend (&(info->notifySemObj), SYS_FOREVER);
 
         // Invalidate cache
