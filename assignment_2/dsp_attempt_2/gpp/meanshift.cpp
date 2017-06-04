@@ -103,7 +103,8 @@ cv::Mat MeanShift::CalWeight(const cv::Mat &frame, cv::Mat &target_model,
         }
     }
 
-    for ( int l = 0; l < 10; l++) {
+    // DEBUGGING
+    /*for ( int l = 0; l < 10; l++) {
         printf(" %d ", bgr_planes[0].at<uchar>(rec.y, rec.x + l));
     }
     printf("\n\n");
@@ -116,7 +117,7 @@ cv::Mat MeanShift::CalWeight(const cv::Mat &frame, cv::Mat &target_model,
     printf("Rows: %d cols: %d\n", testMat.rows, testMat.cols);
     printf("Data length: %d\n", testMat.dataend - testMat.datastart);
     printf("Other data length: %d\n\n", testMat.dataend - testMat.data);
-
+*/
     return weight;
 }
 

@@ -49,7 +49,7 @@ struct config {
 
 struct Rect MeanShift_Track(Task_TransferInfo * info, unsigned char* bgr_planes[3], float* target_model);
 void MeanShift_Init();
-
+float* CalWeight(unsigned char* bgr_planes[3], float* target_model, float* target_candidate, struct Rect rec);
 ////////////////////
 // Original
 ////////////////////
@@ -161,22 +161,26 @@ Int Task_execute (Task_TransferInfo * info)
   //float* target_candidate = (float*) malloc(128*sizeof(float)); // Currently assuming fixed size (since it is)
 
   // This is the original selection that we're looking to track
-  float* target_model = (float*) malloc(128*sizeof(float));     // Currently assuming fixed size (since it is)
+  float* target_model;
+  float* target_candidate;
 
   // This one holds the blue, green and red frames, respectively
   unsigned char* bgr_planes[3];
 
   // The result of the tracking
-  struct Rect result;
+  float* result;
 
-  //if(target_candidate == NULL) {
-    // Not enough memory available, what to do?
-  //}
+  NOTIFY_notify(ID_GPP,MPCSXFER_IPS_ID,MPCSXFER_IPS_EVENTNO,(Uint32)1000);
 
-  // Wait for initial data from GPP
-  //SEM_pend (&(info->notifySemObj), SYS_FOREVER);
+  target_model = (float*) malloc(128*sizeof(float));        // Currently assuming fixed size (since it is)
+  target_candidate = (float*) malloc(128 * sizeof(float));  // Currently assuming fixed size (since it is)
 
-  //MeanShift_Init();
+  NOTIFY_notify(ID_GPP,MPCSXFER_IPS_ID,MPCSXFER_IPS_EVENTNO,(Uint32)1001);
+
+  if (target_model == NULL || target_candidate == NULL) { 
+    NOTIFY_notify(ID_GPP,MPCSXFER_IPS_ID,MPCSXFER_IPS_EVENTNO,(Uint32)666);
+    return 0;
+  }
 
   while (command != 0) {
 
@@ -187,16 +191,103 @@ Int Task_execute (Task_TransferInfo * info)
     case 1:
       // Store target_region
       BCACHE_inv ((Ptr)buf, length, TRUE);
-      //int_buf = (int*)buf;
-      //target_region.height = int_buf[0];
-      //target_region.width = int_buf[1];
-      //target_region.x = int_buf[2];
-      //target_region.y = int_buf[3];
 
-      // Notify GPP
+      // Values are int, so copy as int
+      memcpy(&target_region.x, &buf[0], sizeof(int));
+      memcpy(&target_region.y, &buf[4], sizeof(int));
+      memcpy(&target_region.width, &buf[8], sizeof(int));
+      memcpy(&target_region.height, &buf[12], sizeof(int));
+
+      // Notify GPP that DSP is ready
       NOTIFY_notify(ID_GPP,MPCSXFER_IPS_ID,MPCSXFER_IPS_EVENTNO,(Uint32)0);
       break;
 
+    case 2:
+      // Store target_region
+      BCACHE_inv ((Ptr)buf, length, TRUE);
+
+      memcpy(target_model, (float*)buf, 128 * sizeof(float));
+      NOTIFY_notify(ID_GPP,MPCSXFER_IPS_ID,MPCSXFER_IPS_EVENTNO,(Uint32)1003);
+
+      // Debugging
+      float_buf = (float*)buf;
+      float_buf[0] = target_model[1];
+      NOTIFY_notify(ID_GPP,MPCSXFER_IPS_ID,MPCSXFER_IPS_EVENTNO,(Uint32)1004);
+
+      BCACHE_wbInv ((Ptr)buf, length, TRUE);
+
+      NOTIFY_notify(ID_GPP,MPCSXFER_IPS_ID,MPCSXFER_IPS_EVENTNO,(Uint32)0);
+      break;
+
+    case 3:
+      // Store target_region and target_candidate
+      BCACHE_inv ((Ptr)buf, length, TRUE);
+
+      // Values are int, so copy as int
+      memcpy(&target_region.x, &buf[0], sizeof(int));
+      memcpy(&target_region.y, &buf[4], sizeof(int));
+
+      NOTIFY_notify(ID_GPP,MPCSXFER_IPS_ID,MPCSXFER_IPS_EVENTNO,(Uint32)1005);
+      NOTIFY_notify(ID_GPP,MPCSXFER_IPS_ID,MPCSXFER_IPS_EVENTNO,(Uint32)0);
+
+      break;
+
+    case 4: 
+      bgr_planes[0] = malloc(target_region.width * target_region.height * sizeof(unsigned char));
+      if (bgr_planes[0] == NULL) {
+        NOTIFY_notify(ID_GPP,MPCSXFER_IPS_ID,MPCSXFER_IPS_EVENTNO,(Uint32)667);
+      }
+
+      // Store blue ROI
+      BCACHE_inv ((Ptr)buf, length, TRUE);
+
+      memcpy(bgr_planes[0], buf, target_region.width * target_region.height * sizeof(unsigned char));
+
+      NOTIFY_notify(ID_GPP,MPCSXFER_IPS_ID,MPCSXFER_IPS_EVENTNO,(Uint32)0);
+      break;
+  
+    case 5: 
+      bgr_planes[1] = malloc(target_region.width * target_region.height * sizeof(unsigned char));
+      if (bgr_planes[1] == NULL) {
+        NOTIFY_notify(ID_GPP,MPCSXFER_IPS_ID,MPCSXFER_IPS_EVENTNO,(Uint32)667);
+      }
+
+      // Store blue ROI
+      BCACHE_inv ((Ptr)buf, length, TRUE);
+
+      memcpy(bgr_planes[1], buf, target_region.width * target_region.height * sizeof(unsigned char));
+
+      NOTIFY_notify(ID_GPP,MPCSXFER_IPS_ID,MPCSXFER_IPS_EVENTNO,(Uint32)0);
+      break;
+
+    case 6: 
+      bgr_planes[2] = malloc(target_region.width * target_region.height * sizeof(unsigned char));
+      if (bgr_planes[2] == NULL) {
+        NOTIFY_notify(ID_GPP,MPCSXFER_IPS_ID,MPCSXFER_IPS_EVENTNO,(Uint32)667);
+      }
+
+      // Store blue ROI
+      BCACHE_inv ((Ptr)buf, length, TRUE);
+
+      memcpy(bgr_planes[2], buf, target_region.width * target_region.height * sizeof(unsigned char));
+
+      NOTIFY_notify(ID_GPP,MPCSXFER_IPS_ID,MPCSXFER_IPS_EVENTNO,(Uint32)0);
+      break;
+
+    case 7:
+      // Calculate weight
+      result = CalWeight(bgr_planes, target_model, target_candidate, target_region);
+
+      /*if(result[0] < 1 && result[0] > 0) {
+        NOTIFY_notify(ID_GPP,MPCSXFER_IPS_ID,MPCSXFER_IPS_EVENTNO,(Uint32)777);
+      }*/
+
+      memcpy(buf, (unsigned char*)result, target_region.width * target_region.height * sizeof(float));
+      BCACHE_wbInv ((Ptr)buf, length, TRUE);
+
+      free(result);
+      NOTIFY_notify(ID_GPP,MPCSXFER_IPS_ID,MPCSXFER_IPS_EVENTNO,(Uint32)0);
+      break;
     /*case (Uint32)MSG_TARGET_MODEL:
 
       // Invalidate cache
@@ -287,6 +378,9 @@ Int Task_execute (Task_TransferInfo * info)
     }
 
   }	
+
+  free(target_model);
+  free(target_candidate);
 
   return SYS_OK;
 }
@@ -387,11 +481,10 @@ void MeanShift_Init() {
     bin_width = (float)cfg.pixel_range / (float)cfg.num_bins;
 }
 
-struct Matrix CalWeight(unsigned char* bgr_planes[3], float* target_model,
+float* CalWeight(unsigned char* bgr_planes[3], float* target_model,
                             float* target_candidate, struct Rect rec)
 {
     int k, i, j;
-    struct Matrix weight;
     int rows = rec.height;
     int cols = rec.width;
     int row_index = rec.y;
@@ -418,18 +511,14 @@ struct Matrix CalWeight(unsigned char* bgr_planes[3], float* target_model,
         }
     }
 
-    weight.rows = rows;
-    weight.cols = cols;
-    weight.data = data;
-
-    return weight;
+    return data;
 }
 
 //cv::Rect MeanShift::track(const cv::Mat &next_frame)
 struct Rect MeanShift_Track(Task_TransferInfo * info, unsigned char* bgr_planes[3], float* target_model)
 {
     struct Rect next_rect;
-    int iter, i, j;
+    /*int iter, i, j;
     float* float_buf;
     float* target_candidate = (float*) malloc(128 * sizeof(float)); // Error handling?
     struct Matrix weight;
@@ -502,7 +591,7 @@ struct Rect MeanShift_Track(Task_TransferInfo * info, unsigned char* bgr_planes[
         }
     }
 
-    free(target_candidate);
+    free(target_candidate);*/
 
     return next_rect;
 }

@@ -480,7 +480,9 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
 
   // this is used for testing the car video
   // instead of selection of object of interest using mouse
-  cv::Rect rect(228,367,86,58);
+  // Constructor is x, y, width, height
+  int rect_data[4] = {228, 367, 86, 58};
+  cv::Rect rect(rect_data[0], rect_data[1], rect_data[2], rect_data[3]);
   cv::Mat frame;
   frame_capture.read(frame);
   
@@ -492,17 +494,12 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
   cv::VideoWriter writer("tracking_result.avi", codec, 20, cv::Size(frame.cols, frame.rows));
 
   // Send target_Region to DSP
-  /*int* int_buf = (int*)pool_notify_DataBuf;
-  int_buf[0] = (int)rect.height;
-  int_buf[1] = (int)rect.width;
-  int_buf[2] = (int)rect.x;
-  int_buf[3] = (int)rect.y;*/  
 
-  //printf("Width: %d\n", rect.width);
-  //unsigned char test[2];
-  //test[0] = ()
+  // Notification attempt
 
-  printf("Size of int: %d\n", sizeof(int));
+
+  // Newest attempt (this one works).
+  memcpy(pool_notify_DataBuf, rect_data, 4 * sizeof(int));
 
   POOL_writeback (POOL_makePoolId(processorId, SAMPLE_POOL_ID),
                     pool_notify_DataBuf,
@@ -525,7 +522,55 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
   // Wait for DSP to save it
   sem_wait(&sem);
 
+
+
+
+
+
   // Send target_model to DSP
+  if(ms.target_model.isContinuous()) {
+      //std::copy(ms.target_model.datastart, ms.target_model.dataend, pool_notify_DataBuf);
+      memcpy(pool_notify_DataBuf, (unsigned char*)ms.target_model.data, ms.target_model.rows * ms.target_model.cols * sizeof(float));
+      printf("Success\n");
+
+      POOL_writeback (POOL_makePoolId(processorId, SAMPLE_POOL_ID),
+                  pool_notify_DataBuf,
+                  pool_notify_BufferSize);
+
+      POOL_translateAddr ( POOL_makePoolId(processorId, SAMPLE_POOL_ID),
+                           (void**)&buf_dsp,
+                           AddrType_Dsp,
+                           (Void *) pool_notify_DataBuf,
+                           AddrType_Usr) ;
+
+      status = NOTIFY_notify (processorId, pool_notify_IPS_ID, pool_notify_IPS_EVENTNO, (Uint32)2);
+      if (DSP_FAILED (status)) 
+      {
+          printf ("NOTIFY_notify () DataBuf failed."
+                  " Status = [0x%x]\n",
+                   (int)status) ;
+      }
+  }
+
+  // Debugging ////////////////////
+  printf("First: %f Second: %f\n", ms.target_model.at<float>(0,0), ms.target_model.at<float>(0, 1));
+
+  sem_wait(&sem);
+
+  POOL_invalidate (POOL_makePoolId(processorId, SAMPLE_POOL_ID),
+                                          pool_notify_DataBuf,
+                                          pool_notify_BufferSize);
+
+  float test[2];
+  memcpy(test, (float*)pool_notify_DataBuf, 2 * sizeof(float));
+  printf("First: %f, Second: %f\n", test[0], test[1]);
+
+
+
+
+
+
+
 
   // Start tracking
   int TotalFrames = 32;
@@ -552,12 +597,53 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
 
           // Calculate weight on DSP
 
+          // Send target_candidate and target_Region position
+          memcpy(&pool_notify_DataBuf[0], (unsigned char*)&ms.target_Region.x, sizeof(int));
+          memcpy(&pool_notify_DataBuf[4], (unsigned char*)&ms.target_Region.y, sizeof(int));
+          memcpy(&pool_notify_DataBuf[8], (unsigned char*)&target_candidate.data, sizeof(float));
+
+          POOL_writeback (POOL_makePoolId(processorId, SAMPLE_POOL_ID),
+                  pool_notify_DataBuf,
+                  pool_notify_BufferSize);
+
+          POOL_translateAddr ( POOL_makePoolId(processorId, SAMPLE_POOL_ID),
+                               (void**)&buf_dsp,
+                               AddrType_Dsp,
+                               (Void *) pool_notify_DataBuf,
+                               AddrType_Usr) ;
+
+          status = NOTIFY_notify (processorId, pool_notify_IPS_ID, pool_notify_IPS_EVENTNO, (Uint32)3);
+          if (DSP_FAILED (status)) 
+          {
+              printf ("NOTIFY_notify () DataBuf failed."
+                      " Status = [0x%x]\n",
+                       (int)status) ;
+          }
+
+          printf("Here\n");
+
+          // Wait for DSP to store target_candidate and target_Region
+          sem_wait(&sem);
+
+          printf("Here: 2\n");
+
+
+
+
+
+
+
+
+
+
           // Split frame into bgr matrices
           std::vector<cv::Mat> bgr_planes;
           cv::split(frame, bgr_planes);
 
           // Send ROI of BGR matrices to DSP
-          /*for(int i = 0; i < 3; i++) {
+          for(int i = 0; i < 3; i++) {
+
+            printf("Here: 3\n");
 
             // Put ROI in shared buffer
             cv::Mat roi = bgr_planes[i](ms.target_Region).clone();
@@ -574,7 +660,7 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
                                  AddrType_Usr) ;
 
             // Tell DSP to save it
-            status = NOTIFY_notify (processorId, pool_notify_IPS_ID, pool_notify_IPS_EVENTNO, (Uint32)i);
+            status = NOTIFY_notify (processorId, pool_notify_IPS_ID, pool_notify_IPS_EVENTNO, (Uint32)(4+i));
             if (DSP_FAILED (status)) 
             {
                 printf ("NOTIFY_notify () DataBuf failed."
@@ -585,9 +671,41 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
             // Wait for DSP
             sem_wait(&sem);
 
-          }*/
+          }
+
+          // Tell DSP to execute
+          status = NOTIFY_notify (processorId, pool_notify_IPS_ID, pool_notify_IPS_EVENTNO, (Uint32)(7));
+          if (DSP_FAILED (status)) 
+          {
+              printf ("NOTIFY_notify () DataBuf failed."
+                      " Status = [0x%x]\n",
+                       (int)status) ;
+          }
+
+          // Wait for execution
+          sem_wait(&sem);
+
+          // Store weight from DSP
+          float* dspWeight;
+          dspWeight = (float*) malloc(ms.target_Region.width * ms.target_Region.height * sizeof(float));
+
+          POOL_invalidate (POOL_makePoolId(processorId, SAMPLE_POOL_ID),
+                                          pool_notify_DataBuf,
+                                          pool_notify_BufferSize);
+
+          memcpy(dspWeight, (float*)pool_notify_DataBuf, ms.target_Region.width * ms.target_Region.height * sizeof(float));
+
+          printf("On DSP: %f\n", dspWeight[0]);
 
           cv::Mat weight = ms.CalWeight(frame, ms.target_model, target_candidate, ms.target_Region);
+
+          printf("On GPP: %f\n", weight.at<float>(0,0));
+
+          // Debugging
+          sem_wait(&sem);
+          sem_wait(&sem);
+          sem_wait(&sem);
+          sem_wait(&sem);
 
           float delta_x = 0.0;
           float sum_wij = 0.0;
