@@ -49,7 +49,7 @@ struct config {
 
 struct Rect MeanShift_Track(Task_TransferInfo * info, unsigned char* bgr_planes[3], float* target_model);
 void MeanShift_Init();
-float* CalWeight(unsigned char* bgr_planes[3], float* target_model, float* target_candidate, struct Rect rec);
+float* CalWeight(unsigned char* bgr_planes[3], float* target_model, float* target_candidate, struct Rect rec, float* data);
 ////////////////////
 // Original
 ////////////////////
@@ -163,23 +163,21 @@ Int Task_execute (Task_TransferInfo * info)
   // This is the original selection that we're looking to track
   float* target_model;
   float* target_candidate;
+  float* result;
 
   // This one holds the blue, green and red frames, respectively
   unsigned char* bgr_planes[3];
 
-  // The result of the tracking
-  float* result;
-
   MeanShift_Init();
 
-  NOTIFY_notify(ID_GPP,MPCSXFER_IPS_ID,MPCSXFER_IPS_EVENTNO,(Uint32)1000);
+  //NOTIFY_notify(ID_GPP,MPCSXFER_IPS_ID,MPCSXFER_IPS_EVENTNO,(Uint32)1000);
   
   command = 1000; // So it's not accidentally 0
 
   target_model = (float*) malloc(128*sizeof(float));        // Currently assuming fixed size (since it is)
   target_candidate = (float*) malloc(128 * sizeof(float));  // Currently assuming fixed size (since it is)
 
-  NOTIFY_notify(ID_GPP,MPCSXFER_IPS_ID,MPCSXFER_IPS_EVENTNO,(Uint32)1001);
+  //NOTIFY_notify(ID_GPP,MPCSXFER_IPS_ID,MPCSXFER_IPS_EVENTNO,(Uint32)1001);
 
   if (target_model == NULL || target_candidate == NULL) { 
     NOTIFY_notify(ID_GPP,MPCSXFER_IPS_ID,MPCSXFER_IPS_EVENTNO,(Uint32)666);
@@ -205,21 +203,42 @@ Int Task_execute (Task_TransferInfo * info)
       memcpy(&target_region.width, &buf[8], sizeof(int));
       memcpy(&target_region.height, &buf[12], sizeof(int));
 
+      // Allocate memory for bgr planes
+      bgr_planes[0] = (unsigned char*)malloc(target_region.width * target_region.height * sizeof(unsigned char));
+      if(bgr_planes[0] == NULL) {
+        NOTIFY_notify(ID_GPP,MPCSXFER_IPS_ID,MPCSXFER_IPS_EVENTNO,(Uint32)666);
+      }
+
+      bgr_planes[1] = (unsigned char*)malloc(target_region.width * target_region.height * sizeof(unsigned char));
+      if(bgr_planes[1] == NULL) {
+        NOTIFY_notify(ID_GPP,MPCSXFER_IPS_ID,MPCSXFER_IPS_EVENTNO,(Uint32)666);
+      }
+
+      bgr_planes[2] = (unsigned char*)malloc(target_region.width * target_region.height * sizeof(unsigned char));
+      if(bgr_planes[1] == NULL) {
+        NOTIFY_notify(ID_GPP,MPCSXFER_IPS_ID,MPCSXFER_IPS_EVENTNO,(Uint32)666);
+      }
+
+      result = (float*) malloc(target_region.width * target_region.height * sizeof(float));
+      if(result == NULL) {
+        NOTIFY_notify(ID_GPP,MPCSXFER_IPS_ID,MPCSXFER_IPS_EVENTNO,(Uint32)666);
+      }
+
       // Notify GPP that DSP is ready
       NOTIFY_notify(ID_GPP,MPCSXFER_IPS_ID,MPCSXFER_IPS_EVENTNO,(Uint32)0);
       break;
 
     case 2:
-      // Store target_region
+      // Store target_model
       BCACHE_inv ((Ptr)buf, length, TRUE);
 
       memcpy(target_model, buf, 128 * sizeof(float));
-      NOTIFY_notify(ID_GPP,MPCSXFER_IPS_ID,MPCSXFER_IPS_EVENTNO,(Uint32)1003);
+      //NOTIFY_notify(ID_GPP,MPCSXFER_IPS_ID,MPCSXFER_IPS_EVENTNO,(Uint32)1003);
 
       // Debugging
       float_buf = (float*)buf;
       float_buf[0] = target_model[1];
-      NOTIFY_notify(ID_GPP,MPCSXFER_IPS_ID,MPCSXFER_IPS_EVENTNO,(Uint32)1004);
+      //NOTIFY_notify(ID_GPP,MPCSXFER_IPS_ID,MPCSXFER_IPS_EVENTNO,(Uint32)1004);
 
       BCACHE_wbInv ((Ptr)buf, length, TRUE);
 
@@ -237,16 +256,16 @@ Int Task_execute (Task_TransferInfo * info)
       // Values are float, so copy as float, 128 fixed for now
       memcpy(target_candidate, &buf[8], 128 * sizeof(float));
 
-      NOTIFY_notify(ID_GPP,MPCSXFER_IPS_ID,MPCSXFER_IPS_EVENTNO,(Uint32)1005);
+      //NOTIFY_notify(ID_GPP,MPCSXFER_IPS_ID,MPCSXFER_IPS_EVENTNO,(Uint32)1005);
       NOTIFY_notify(ID_GPP,MPCSXFER_IPS_ID,MPCSXFER_IPS_EVENTNO,(Uint32)0);
 
       break;
 
     case 4: 
-      bgr_planes[0] = (unsigned char*)malloc(target_region.width * target_region.height * sizeof(unsigned char));
+      /*bgr_planes[0] = (unsigned char*)malloc(target_region.width * target_region.height * sizeof(unsigned char));
       if (bgr_planes[0] == NULL) {
         NOTIFY_notify(ID_GPP,MPCSXFER_IPS_ID,MPCSXFER_IPS_EVENTNO,(Uint32)667);
-      }
+      }*/
 
       // Store blue ROI
       BCACHE_inv ((Ptr)buf, length, TRUE);
@@ -257,10 +276,10 @@ Int Task_execute (Task_TransferInfo * info)
       break;
   
     case 5: 
-      bgr_planes[1] = (unsigned char*)malloc(target_region.width * target_region.height * sizeof(unsigned char));
+      /*bgr_planes[1] = (unsigned char*)malloc(target_region.width * target_region.height * sizeof(unsigned char));
       if (bgr_planes[1] == NULL) {
         NOTIFY_notify(ID_GPP,MPCSXFER_IPS_ID,MPCSXFER_IPS_EVENTNO,(Uint32)667);
-      }
+      }*/
 
       // Store blue ROI
       BCACHE_inv ((Ptr)buf, length, TRUE);
@@ -271,10 +290,10 @@ Int Task_execute (Task_TransferInfo * info)
       break;
 
     case 6: 
-      bgr_planes[2] = (unsigned char*)malloc(target_region.width * target_region.height * sizeof(unsigned char));
+      /*bgr_planes[2] = (unsigned char*)malloc(target_region.width * target_region.height * sizeof(unsigned char));
       if (bgr_planes[2] == NULL) {
         NOTIFY_notify(ID_GPP,MPCSXFER_IPS_ID,MPCSXFER_IPS_EVENTNO,(Uint32)667);
-      }
+      }*/
 
       // Store blue ROI
       BCACHE_inv ((Ptr)buf, length, TRUE);
@@ -286,7 +305,7 @@ Int Task_execute (Task_TransferInfo * info)
 
     case 7:
       // Calculate weight
-      result = CalWeight(bgr_planes, target_model, target_candidate, target_region);
+      CalWeight(bgr_planes, target_model, target_candidate, target_region, result);
 
       // Check for NULL?
       if (result == NULL) {
@@ -297,7 +316,7 @@ Int Task_execute (Task_TransferInfo * info)
         NOTIFY_notify(ID_GPP,MPCSXFER_IPS_ID,MPCSXFER_IPS_EVENTNO,(Uint32)777);
       }*/
 
-      NOTIFY_notify(ID_GPP,MPCSXFER_IPS_ID,MPCSXFER_IPS_EVENTNO,(Uint32)777);
+      //NOTIFY_notify(ID_GPP,MPCSXFER_IPS_ID,MPCSXFER_IPS_EVENTNO,(Uint32)777);
 
       memcpy(buf, result, target_region.width * target_region.height * sizeof(float));
       //float_buf = (float*)buf;
@@ -318,11 +337,7 @@ Int Task_execute (Task_TransferInfo * info)
       //float_buf[0] = (float)target_region.height;
       BCACHE_wbInv ((Ptr)buf, length, TRUE);
 
-      free(result);
-
-      for(i = 0; i < 3; i++) {
-        free(bgr_planes[i]);
-      }
+      //free(result);
 
       NOTIFY_notify(ID_GPP,MPCSXFER_IPS_ID,MPCSXFER_IPS_EVENTNO,(Uint32)0);
       break;
@@ -419,6 +434,11 @@ Int Task_execute (Task_TransferInfo * info)
 
   free(target_model);
   free(target_candidate);
+  free(result);
+
+  for(i = 0; i < 3; i++) {
+    free(bgr_planes[i]);
+  }
 
   return SYS_OK;
 }
@@ -520,7 +540,7 @@ void MeanShift_Init() {
 }
 
 float* CalWeight(unsigned char* bgr_planes[3], float* target_model,
-                            float* target_candidate, struct Rect rec)
+                            float* target_candidate, struct Rect rec, float* data)
 {
     int k, i, j;
     int rows = rec.height;
@@ -533,7 +553,7 @@ float* CalWeight(unsigned char* bgr_planes[3], float* target_model,
     int bin_value;
 
     //cv::Mat weight(rows,cols,CV_32F,cv::Scalar(1.0000));
-    float *data = (float*)malloc(rows*cols*sizeof(float));
+    //float *data = (float*)malloc(rows*cols*sizeof(float));
     if (data == NULL) {
       return NULL;
     }

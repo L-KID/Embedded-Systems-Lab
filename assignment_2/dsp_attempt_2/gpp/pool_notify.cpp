@@ -533,7 +533,7 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
   if(ms.target_model.isContinuous()) {
       //std::copy(ms.target_model.datastart, ms.target_model.dataend, pool_notify_DataBuf);
       memcpy(pool_notify_DataBuf, ms.target_model.data, ms.target_model.rows * ms.target_model.cols * sizeof(float));
-      printf("Success\n");
+      //printf("Success\n");
 
       POOL_writeback (POOL_makePoolId(processorId, SAMPLE_POOL_ID),
                   pool_notify_DataBuf,
@@ -555,7 +555,7 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
   }
 
   // Debugging ////////////////////
-  printf("First: %f Second: %f\n", ms.target_model.at<float>(0,0), ms.target_model.at<float>(0, 1));
+  //printf("First: %f Second: %f\n", ms.target_model.at<float>(0,0), ms.target_model.at<float>(0, 1));
 
   sem_wait(&sem);
 
@@ -565,7 +565,7 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
 
   float test[2];
   memcpy(test, pool_notify_DataBuf, 2 * sizeof(float));
-  printf("First: %f, Second: %f\n", test[0], test[1]);
+  //printf("First: %f, Second: %f\n", test[0], test[1]);
 
 
 
@@ -627,12 +627,12 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
                        (int)status) ;
           }
 
-          printf("Here\n");
+          //printf("Here\n");
 
           // Wait for DSP to store target_candidate and target_Region
           sem_wait(&sem);
 
-          printf("Here: 2\n");
+          //printf("Here: 2\n");
 
 
 
@@ -643,14 +643,14 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
 
 
 
-          // Split frame into bgr matrices
+          // Split frame into bgr matrices, doing this too many times...
           std::vector<cv::Mat> bgr_planes;
           cv::split(frame, bgr_planes);
 
           // Send ROI of BGR matrices to DSP
           for(int i = 0; i < 3; i++) {
 
-            printf("Here: 3\n");
+            //printf("Here: 3\n");
 
             // Put ROI in shared buffer
             cv::Mat roi = bgr_planes[i](ms.target_Region).clone();
@@ -702,11 +702,36 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
 
           memcpy(dspWeight, pool_notify_DataBuf, ms.target_Region.width * ms.target_Region.height * sizeof(float));
 
-          printf("On DSP: %f %f %f\n", dspWeight[0], dspWeight[1], dspWeight[2]);
 
-          cv::Mat weight = ms.CalWeight(frame, ms.target_model, target_candidate, ms.target_Region);
+          cv::Mat weight = cv::Mat(ms.target_Region.height, ms.target_Region.width, CV_32F, dspWeight);
+
+          //printf("On DSP: %f %f %f\n", dspWeight[0], dspWeight[1], dspWeight[2]);
+          //printf("On DSP: %f %f %f\n", newWeight.at<float>(0,0), newWeight.at<float>(0,1), newWeight.at<float>(0,2));
+          //printf("Rows: %d cols: %d\n", newWeight.rows, newWeight.cols);
+
+          //cv::Mat weight = ms.CalWeight(frame, ms.target_model, target_candidate, ms.target_Region);
           //printf("On GPP: %f\n", target_candidate.at<float>(0,0));
-          printf("On GPP: %f %f %f\n", weight.at<float>(0,0), weight.at<float>(0,1), weight.at<float>(0,2));
+          //printf("On GPP: %f %f %f\n", weight.at<float>(0,0), weight.at<float>(0,1), weight.at<float>(0,2));
+          //printf("rows: %d cols: %d\n", weight.rows, weight.cols);
+          
+          //std::cout << "DSP:" << std::endl << newWeight << std::endl << std::endl;
+          //std::cout << "GPP:" << std::endl << weight << std::endl << std::endl;
+
+          //printf("DSP: %f GPP: %f\n", newWeight.at<float>(14, 76), weight.at<float>(14,76));
+          //printf("DSP: %f GPP: %f\n", dspWeight[ms.target_Region.width*ms.target_Region.height-1], weight.at<float>(57,84));
+
+          /*printf("%f %f\n", dspWeight[0], weight.at<float>(0,0));
+
+          for(int i = 0; i < ms.target_Region.height; i++) {
+            printf("ROW\n");
+            for(int j=0; j<ms.target_Region.width;j++) {
+              printf("(%f %f) ", dspWeight[i*ms.target_Region.width + j], weight.at<float>(i,j));
+            }
+            printf("\n\n");
+          }
+          printf("\n");
+*/
+          //printf("Rows: %d Cols: %d rows: %d cols: %d\n", weight.rows, weight.cols, newWeight.rows, newWeight.cols);
 
           // Debugging
           /*sem_wait(&sem);
@@ -764,8 +789,8 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
       // write the frame
       writer << frame;
   }
-
-  printf("Sum execution time %lld us.unsigned char\n", get_usec()-start);
+  
+  printf("Sum execution time %lld us.\n", get_usec()-start);
 
   return status ;
 }
@@ -934,7 +959,7 @@ NORMAL_API Void pool_notify_Main (IN Char8 * dspExecutable, IN Char8 * strBuffer
 STATIC Void pool_notify_Notify (Uint32 eventNo, Pvoid arg, Pvoid info)
 {
 	#ifdef DEBUG
-    printf("Notification %8d \n", (int)info);
+    //printf("Notification %8d \n", (int)info);
 	#endif
     /* Post the semaphore. */
 
