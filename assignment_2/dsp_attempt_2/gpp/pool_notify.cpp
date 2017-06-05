@@ -706,13 +706,13 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
 
           cv::Mat weight = ms.CalWeight(frame, ms.target_model, target_candidate, ms.target_Region);
           //printf("On GPP: %f\n", target_candidate.at<float>(0,0));
-          printf("On GPP: %f\n", weight.at<float>(0,0));
+          printf("On GPP: %f %f %f\n", weight.at<float>(0,0), weight.at<float>(0,1), weight.at<float>(0,2));
 
           // Debugging
+          /*sem_wait(&sem);
           sem_wait(&sem);
           sem_wait(&sem);
-          sem_wait(&sem);
-          sem_wait(&sem);
+          sem_wait(&sem);*/
 
           float delta_x = 0.0;
           float sum_wij = 0.0;

@@ -300,7 +300,10 @@ Int Task_execute (Task_TransferInfo * info)
       NOTIFY_notify(ID_GPP,MPCSXFER_IPS_ID,MPCSXFER_IPS_EVENTNO,(Uint32)777);
 
       memcpy(buf, result, target_region.width * target_region.height * sizeof(float));
-      float_buf = (float*)buf;
+      //float_buf = (float*)buf;
+
+      //float_buf[0] = bgr_planes[1][1*target_region.width + 10];
+
       //result[0] = 1.6f;
 
       // Checked
@@ -538,17 +541,25 @@ float* CalWeight(unsigned char* bgr_planes[3], float* target_model,
     
 
     // Debug
-    curr_pixel = bgr_planes[0][0];
-    bin_value = curr_pixel/bin_width;
-    data[0] = (float)sqrt(target_model[bin_value]/target_candidate[bin_value]);
+    for(i = 0; i < rows; i++) {
+      for(j = 0; j < cols; j++) {
 
-    curr_pixel = bgr_planes[1][0];
-    bin_value = curr_pixel/bin_width;
-    data[1] = (float)sqrt(target_model[16 + bin_value]/target_candidate[16 + bin_value]);
+        curr_pixel = bgr_planes[0][i*cols + j];
+        bin_value = curr_pixel/bin_width;
+        data[i*cols + j] = (float)sqrt(target_model[bin_value]/target_candidate[bin_value]);
 
-    curr_pixel = bgr_planes[2][0];
-    bin_value = curr_pixel/bin_width;
-    data[2] = (float)sqrt(target_model[2*16 + bin_value]/target_candidate[2*16 + bin_value]);
+        curr_pixel = bgr_planes[1][i*cols + j];
+        bin_value = curr_pixel/bin_width;
+        data[i*cols + j] *= (float)sqrt(target_model[16 + bin_value]/target_candidate[16 + bin_value]);
+
+        curr_pixel = bgr_planes[2][i*cols + j];
+        bin_value = curr_pixel/bin_width;
+        data[i*cols + j] *= (float)sqrt(target_model[2*16 + bin_value]/target_candidate[2*16 + bin_value]);
+
+      }
+    }
+
+
 
     /*for(k = 0; k < 3;  k++)
     {
@@ -559,10 +570,26 @@ float* CalWeight(unsigned char* bgr_planes[3], float* target_model,
             for(j = 0; j < cols; j++)
             {
                 //int curr_pixel = (bgr_planes[k][row_index*rows + col_index]);
-                int curr_pixel = (bgr_planes[k][i*cols + j]);
-                int bin_value = curr_pixel/bin_width;
-                //data[i*rows + j] *= (float)((sqrt((float)target_model[k*8 + bin_value]/(float)target_candidate[k*8 + bin_value])));
-                data[i*cols + j] = (float)sqrt(target_model[k*16 + bin_value]/target_candidate[k*16 + bin_value]);
+                
+
+              curr_pixel = (bgr_planes[k][i*cols + j]);
+              bin_value = curr_pixel/bin_width;
+              data[i*cols + j] *= (float)sqrt(target_model[k*16 + bin_value]/target_candidate[k*16 + bin_value]);
+
+              // NEW
+              /*curr_pixel = (bgr_planes[0][i*cols + j]);
+              bin_value = curr_pixel/bin_width;
+              data[i*cols + j] = (float)sqrt(target_model[bin_value]/target_candidate[bin_value]);
+
+              curr_pixel = (bgr_planes[1][i*cols + j]);
+              bin_value = curr_pixel/bin_width;
+              data[i*cols + j] *= (float)sqrt(target_model[16 + bin_value]/target_candidate[bin_value]);
+
+              curr_pixel = (bgr_planes[2][i*cols + j]);
+              bin_value = curr_pixel/bin_width;
+              data[i*cols + j] *= (float)sqrt(target_model[2*16 + bin_value]/target_candidate[bin_value]);
+
+                //data[i*cols + j] = (float)sqrt(target_model[k*16 + bin_value]/target_candidate[k*16 + bin_value]);
                 //col_index++;
             }
             //row_index++;
