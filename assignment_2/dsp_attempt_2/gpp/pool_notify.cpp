@@ -497,6 +497,8 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
 
   // Notification attempt
 
+  // Wait for DSP to be ready for command
+  sem_wait(&sem);
 
   // Newest attempt (this one works).
   memcpy(pool_notify_DataBuf, rect_data, 4 * sizeof(int));
@@ -530,7 +532,7 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
   // Send target_model to DSP
   if(ms.target_model.isContinuous()) {
       //std::copy(ms.target_model.datastart, ms.target_model.dataend, pool_notify_DataBuf);
-      memcpy(pool_notify_DataBuf, (unsigned char*)ms.target_model.data, ms.target_model.rows * ms.target_model.cols * sizeof(float));
+      memcpy(pool_notify_DataBuf, ms.target_model.data, ms.target_model.rows * ms.target_model.cols * sizeof(float));
       printf("Success\n");
 
       POOL_writeback (POOL_makePoolId(processorId, SAMPLE_POOL_ID),
@@ -562,7 +564,7 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
                                           pool_notify_BufferSize);
 
   float test[2];
-  memcpy(test, (float*)pool_notify_DataBuf, 2 * sizeof(float));
+  memcpy(test, pool_notify_DataBuf, 2 * sizeof(float));
   printf("First: %f, Second: %f\n", test[0], test[1]);
 
 
@@ -598,9 +600,14 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
           // Calculate weight on DSP
 
           // Send target_candidate and target_Region position
-          memcpy(&pool_notify_DataBuf[0], (unsigned char*)&ms.target_Region.x, sizeof(int));
-          memcpy(&pool_notify_DataBuf[4], (unsigned char*)&ms.target_Region.y, sizeof(int));
-          memcpy(&pool_notify_DataBuf[8], (unsigned char*)&target_candidate.data, sizeof(float));
+          memcpy(&pool_notify_DataBuf[0], &ms.target_Region.x, sizeof(int));
+          memcpy(&pool_notify_DataBuf[4], &ms.target_Region.y, sizeof(int));
+
+          // Check if continuous!!
+          memcpy(&pool_notify_DataBuf[8], target_candidate.data, target_candidate.rows * target_candidate.cols * sizeof(float));
+
+        //memcpy(pool_notify_DataBuf, ms.target_model.data, ms.target_model.rows * ms.target_model.cols * sizeof(float));
+
 
           POOL_writeback (POOL_makePoolId(processorId, SAMPLE_POOL_ID),
                   pool_notify_DataBuf,
@@ -693,12 +700,12 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
                                           pool_notify_DataBuf,
                                           pool_notify_BufferSize);
 
-          memcpy(dspWeight, (float*)pool_notify_DataBuf, ms.target_Region.width * ms.target_Region.height * sizeof(float));
+          memcpy(dspWeight, pool_notify_DataBuf, ms.target_Region.width * ms.target_Region.height * sizeof(float));
 
-          printf("On DSP: %f\n", dspWeight[0]);
+          printf("On DSP: %f %f %f\n", dspWeight[0], dspWeight[1], dspWeight[2]);
 
           cv::Mat weight = ms.CalWeight(frame, ms.target_model, target_candidate, ms.target_Region);
-
+          //printf("On GPP: %f\n", target_candidate.at<float>(0,0));
           printf("On GPP: %f\n", weight.at<float>(0,0));
 
           // Debugging
@@ -730,6 +737,8 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
                   sum_wij += static_cast<float>(weight.at<float>(i,j)*mult);
               }
           }
+
+          free(dspWeight);
 
           next_rect.x += static_cast<int>((delta_x/sum_wij)*centre);
           next_rect.y += static_cast<int>((delta_y/sum_wij)*centre);

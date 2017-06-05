@@ -170,7 +170,11 @@ Int Task_execute (Task_TransferInfo * info)
   // The result of the tracking
   float* result;
 
+  MeanShift_Init();
+
   NOTIFY_notify(ID_GPP,MPCSXFER_IPS_ID,MPCSXFER_IPS_EVENTNO,(Uint32)1000);
+  
+  command = 1000; // So it's not accidentally 0
 
   target_model = (float*) malloc(128*sizeof(float));        // Currently assuming fixed size (since it is)
   target_candidate = (float*) malloc(128 * sizeof(float));  // Currently assuming fixed size (since it is)
@@ -181,6 +185,9 @@ Int Task_execute (Task_TransferInfo * info)
     NOTIFY_notify(ID_GPP,MPCSXFER_IPS_ID,MPCSXFER_IPS_EVENTNO,(Uint32)666);
     return 0;
   }
+
+  // Notify GPP that DSP is ready
+  NOTIFY_notify(ID_GPP,MPCSXFER_IPS_ID,MPCSXFER_IPS_EVENTNO,(Uint32)0);
 
   while (command != 0) {
 
@@ -206,7 +213,7 @@ Int Task_execute (Task_TransferInfo * info)
       // Store target_region
       BCACHE_inv ((Ptr)buf, length, TRUE);
 
-      memcpy(target_model, (float*)buf, 128 * sizeof(float));
+      memcpy(target_model, buf, 128 * sizeof(float));
       NOTIFY_notify(ID_GPP,MPCSXFER_IPS_ID,MPCSXFER_IPS_EVENTNO,(Uint32)1003);
 
       // Debugging
@@ -227,13 +234,16 @@ Int Task_execute (Task_TransferInfo * info)
       memcpy(&target_region.x, &buf[0], sizeof(int));
       memcpy(&target_region.y, &buf[4], sizeof(int));
 
+      // Values are float, so copy as float, 128 fixed for now
+      memcpy(target_candidate, &buf[8], 128 * sizeof(float));
+
       NOTIFY_notify(ID_GPP,MPCSXFER_IPS_ID,MPCSXFER_IPS_EVENTNO,(Uint32)1005);
       NOTIFY_notify(ID_GPP,MPCSXFER_IPS_ID,MPCSXFER_IPS_EVENTNO,(Uint32)0);
 
       break;
 
     case 4: 
-      bgr_planes[0] = malloc(target_region.width * target_region.height * sizeof(unsigned char));
+      bgr_planes[0] = (unsigned char*)malloc(target_region.width * target_region.height * sizeof(unsigned char));
       if (bgr_planes[0] == NULL) {
         NOTIFY_notify(ID_GPP,MPCSXFER_IPS_ID,MPCSXFER_IPS_EVENTNO,(Uint32)667);
       }
@@ -247,7 +257,7 @@ Int Task_execute (Task_TransferInfo * info)
       break;
   
     case 5: 
-      bgr_planes[1] = malloc(target_region.width * target_region.height * sizeof(unsigned char));
+      bgr_planes[1] = (unsigned char*)malloc(target_region.width * target_region.height * sizeof(unsigned char));
       if (bgr_planes[1] == NULL) {
         NOTIFY_notify(ID_GPP,MPCSXFER_IPS_ID,MPCSXFER_IPS_EVENTNO,(Uint32)667);
       }
@@ -261,7 +271,7 @@ Int Task_execute (Task_TransferInfo * info)
       break;
 
     case 6: 
-      bgr_planes[2] = malloc(target_region.width * target_region.height * sizeof(unsigned char));
+      bgr_planes[2] = (unsigned char*)malloc(target_region.width * target_region.height * sizeof(unsigned char));
       if (bgr_planes[2] == NULL) {
         NOTIFY_notify(ID_GPP,MPCSXFER_IPS_ID,MPCSXFER_IPS_EVENTNO,(Uint32)667);
       }
@@ -278,14 +288,39 @@ Int Task_execute (Task_TransferInfo * info)
       // Calculate weight
       result = CalWeight(bgr_planes, target_model, target_candidate, target_region);
 
+      // Check for NULL?
+      if (result == NULL) {
+        NOTIFY_notify(ID_GPP,MPCSXFER_IPS_ID,MPCSXFER_IPS_EVENTNO,(Uint32)668);
+      }
+
       /*if(result[0] < 1 && result[0] > 0) {
         NOTIFY_notify(ID_GPP,MPCSXFER_IPS_ID,MPCSXFER_IPS_EVENTNO,(Uint32)777);
       }*/
 
-      memcpy(buf, (unsigned char*)result, target_region.width * target_region.height * sizeof(float));
+      NOTIFY_notify(ID_GPP,MPCSXFER_IPS_ID,MPCSXFER_IPS_EVENTNO,(Uint32)777);
+
+      memcpy(buf, result, target_region.width * target_region.height * sizeof(float));
+      float_buf = (float*)buf;
+      //result[0] = 1.6f;
+
+      // Checked
+
+      //float_buf[0] = result[0];
+      //float_buf[0] = target_model[0]; OK
+      //float_buf[0] = target_candidate[0]; OK
+      
+      //float_buf[0] = bgr_planes[1][target_region.width + 5];
+
+      //float_buf[0] = (float)target_region.width;
+      //float_buf[0] = (float)target_region.height;
       BCACHE_wbInv ((Ptr)buf, length, TRUE);
 
       free(result);
+
+      for(i = 0; i < 3; i++) {
+        free(bgr_planes[i]);
+      }
+
       NOTIFY_notify(ID_GPP,MPCSXFER_IPS_ID,MPCSXFER_IPS_EVENTNO,(Uint32)0);
       break;
     /*case (Uint32)MSG_TARGET_MODEL:
@@ -490,11 +525,32 @@ float* CalWeight(unsigned char* bgr_planes[3], float* target_model,
     int row_index = rec.y;
     int col_index = rec.x;
 
+    // Debug
+    int curr_pixel;
+    int bin_value;
+
     //cv::Mat weight(rows,cols,CV_32F,cv::Scalar(1.0000));
     float *data = (float*)malloc(rows*cols*sizeof(float));
+    if (data == NULL) {
+      return NULL;
+    }
     // Remember to FREE this one once it is no longer needed in main 
     
-    for(k = 0; k < 3;  k++)
+
+    // Debug
+    curr_pixel = bgr_planes[0][0];
+    bin_value = curr_pixel/bin_width;
+    data[0] = (float)sqrt(target_model[bin_value]/target_candidate[bin_value]);
+
+    curr_pixel = bgr_planes[1][0];
+    bin_value = curr_pixel/bin_width;
+    data[1] = (float)sqrt(target_model[16 + bin_value]/target_candidate[16 + bin_value]);
+
+    curr_pixel = bgr_planes[2][0];
+    bin_value = curr_pixel/bin_width;
+    data[2] = (float)sqrt(target_model[2*16 + bin_value]/target_candidate[2*16 + bin_value]);
+
+    /*for(k = 0; k < 3;  k++)
     {
         row_index = rec.y;
         for(i = 0; i < rows; i++)
@@ -502,14 +558,21 @@ float* CalWeight(unsigned char* bgr_planes[3], float* target_model,
             col_index = rec.x;
             for(j = 0; j < cols; j++)
             {
-                int curr_pixel = (bgr_planes[k][row_index*rows + col_index]);
+                //int curr_pixel = (bgr_planes[k][row_index*rows + col_index]);
+                int curr_pixel = (bgr_planes[k][i*cols + j]);
                 int bin_value = curr_pixel/bin_width;
-                data[i*rows + j] *= (float)((sqrt(target_model[k*rows + bin_value]/target_candidate[k*rows + bin_value])));
-                col_index++;
+                //data[i*rows + j] *= (float)((sqrt((float)target_model[k*8 + bin_value]/(float)target_candidate[k*8 + bin_value])));
+                data[i*cols + j] = (float)sqrt(target_model[k*16 + bin_value]/target_candidate[k*16 + bin_value]);
+                //col_index++;
             }
-            row_index++;
+            //row_index++;
         }
-    }
+    }*/
+
+    //data[0] = target_model[0];
+    // Checked
+    // BGR planes
+    // 
 
     return data;
 }

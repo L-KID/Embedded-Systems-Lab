@@ -86,6 +86,8 @@ cv::Mat MeanShift::CalWeight(const cv::Mat &frame, cv::Mat &target_model,
     std::vector<cv::Mat> bgr_planes;
     cv::split(frame, bgr_planes);
 
+    printf("GPP: %u\n", bgr_planes[1].at<uchar>(rec.y + 1 , rec.x + 5));
+
     for(int k = 0; k < 3;  k++)
     {
         row_index = rec.y;
