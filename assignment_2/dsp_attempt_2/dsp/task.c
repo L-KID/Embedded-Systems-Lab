@@ -40,19 +40,58 @@ static Void Task_notify (Uint32 eventNo, Ptr arg, Ptr info) ;
 //////////////////////////////
 // For MeanShift
 ////////////////////////////
-float bin_width;
+int bin_width;
 struct config {
     int num_bins;
     int pixel_range;
     int MaxIter;
 } cfg;
 
-struct Rect MeanShift_Track(Task_TransferInfo * info, unsigned char* bgr_planes[3], float* target_model);
 void MeanShift_Init();
 float* CalWeight(unsigned char* bgr_planes[3], float* target_model, float* target_candidate, struct Rect rec, float* data);
-////////////////////
-// Original
-////////////////////
+
+/* Conversion between floating point and fixed point */
+const int scale = 16; // 1/2^16
+#define FloatToFixed(x) (x* (float)(1<<scale))
+#define FixedToFloat(x) ((float)x/(float)(1<<scale))
+#define MUL(x, y)  ((((x) >> 8)*((y) >> 8)) >> 0)
+#define DIV(x, y) (((x)<<7)/(y)<<9)
+
+int SquareRootRounded(int x)
+{
+    // input a fixed number
+    Uint32 op  = x;
+    Uint32 res = 0;
+    Uint32 one = 1uL << 30; // The second-to-top bit is set: use 1u << 14 for uint16_t type; use 1uL<<30 for uint32_t type
+    
+    
+    // "one" starts at the highest power of four <= than the argument.
+    while (one > op)
+    {
+        one >>= 2;
+    }
+    
+    while (one != 0)
+    {
+        if (op >= res + one)
+        {
+            op = op - (res + one);
+            res = res +  2 * one;
+        }
+        res >>= 1;
+        one >>= 2;
+    }
+    
+    /* Do arithmetic rounding to nearest integer */
+    if (op > res)
+    {
+        res++;
+    }
+    
+    res = res*(float)(1<<4);
+    
+    return res; // fixed number
+}
 
 Int Task_create (Task_TransferInfo ** infoPtr)
 {
@@ -341,93 +380,6 @@ Int Task_execute (Task_TransferInfo * info)
 
       NOTIFY_notify(ID_GPP,MPCSXFER_IPS_ID,MPCSXFER_IPS_EVENTNO,(Uint32)0);
       break;
-    /*case (Uint32)MSG_TARGET_MODEL:
-
-      // Invalidate cache
-      BCACHE_inv ((Ptr)buf, length, TRUE);
-      
-      // Store PDF representation from GPP
-      float_buf = (float*)buf;
-      memcpy(target_model, float_buf, 128 * sizeof(float));
-
-      float_buf[1] = 1.5f;
-
-      // For testing
-      //float_buf[0] = 1.5f;
-
-      BCACHE_wbInv ((Ptr)buf, length, TRUE);
-
-      NOTIFY_notify(ID_GPP,MPCSXFER_IPS_ID,MPCSXFER_IPS_EVENTNO,(Uint32)0);
-      break;
-
-    case (Uint32)MSG_BLUE_FRAME:
-      // Store blue frame
-      BCACHE_inv ((Ptr)buf, length, TRUE);
-      bgr_planes[0] = (unsigned char*) malloc(rows * cols * sizeof(unsigned char));
-      memcpy(bgr_planes[0], buf, rows * cols * sizeof(unsigned char) );
-
-      // For debugging
-      memcpy(buf, bgr_planes[0], rows * cols * sizeof(unsigned char) );
-      BCACHE_wbInv( (Ptr)buf, length, TRUE);
-
-      // Tell GPP that DSP is ready
-      NOTIFY_notify(ID_GPP,MPCSXFER_IPS_ID,MPCSXFER_IPS_EVENTNO,(Uint32)0);
-      break;
-
-    case (Uint32)MSG_GREEN_FRAME:
-      // Store green frame
-      BCACHE_inv ((Ptr)buf, length, TRUE);
-      bgr_planes[1] = (unsigned char*) malloc(rows * cols * sizeof(unsigned char));
-      memcpy(bgr_planes[1], buf, rows * cols * sizeof(unsigned char) );
-      
-      // For debugging
-      memcpy(buf, bgr_planes[1], rows * cols * sizeof(unsigned char) );
-      BCACHE_wbInv( (Ptr)buf, length, TRUE);
-
-      // Tell GPP that DSP is ready  
-      NOTIFY_notify(ID_GPP,MPCSXFER_IPS_ID,MPCSXFER_IPS_EVENTNO,(Uint32)0);
-      break;
-
-    case (Uint32)MSG_RED_FRAME:
-      // Store red frame
-      BCACHE_inv ((Ptr)buf, length, TRUE);
-      bgr_planes[2] = (unsigned char*) malloc(rows * cols * sizeof(unsigned char));
-      memcpy(bgr_planes[2], buf, rows * cols * sizeof(unsigned char) );
-
-      // For debugging
-      memcpy(buf, bgr_planes[2], rows * cols * sizeof(unsigned char) );
-      BCACHE_wbInv( (Ptr)buf, length, TRUE);
-
-      // Tell GPP that DSP is ready
-      NOTIFY_notify(ID_GPP,MPCSXFER_IPS_ID,MPCSXFER_IPS_EVENTNO,(Uint32)0);
-      break;
-
-    case (Uint32)MSG_TARGET_CANDIDATE:
-      // Invalidate cache
-      //BCACHE_inv ((Ptr)buf, length, TRUE);
-      
-      // Store target candidate from GPP
-      //float_buf = (float*)buf;
-      //memcpy(target_candidate, float_buf, 128 * sizeof(float));
-
-      // Tell GPP that DSP is ready
-      //NOTIFY_notify(ID_GPP,MPCSXFER_IPS_ID,MPCSXFER_IPS_EVENTNO,(Uint32)0);
-      break;
-
-    case (Uint32)MSG_TRACK:
-      result = MeanShift_Track(info, bgr_planes, target_model);
-
-      // Tell GPP that tracking is done
-      NOTIFY_notify(ID_GPP,MPCSXFER_IPS_ID,MPCSXFER_IPS_EVENTNO,(Uint32)0);
-
-      // Send result to GPP
-      NOTIFY_notify(ID_GPP,MPCSXFER_IPS_ID,MPCSXFER_IPS_EVENTNO,(int)result.x);
-      NOTIFY_notify(ID_GPP,MPCSXFER_IPS_ID,MPCSXFER_IPS_EVENTNO,(int)result.y);
-
-      //buf[0] = (unsigned char)result.x;
-      //buf[1] = (unsigned char)result.y;
-
-      break;*/
     }
 
   }	
@@ -487,45 +439,6 @@ static Void Task_notify (Uint32 eventNo, Ptr arg, Ptr info)
       command = (Uint32)info;
       SEM_post(&(mpcsInfo->notifySemObj));
     }
-
-    /*if (count == 1) {
-      buf = (unsigned char*)info ;
-      SEM_post(&(mpcsInfo->notifySemObj));
-    } 
-    else if (count == 2) {
-      length = (int)info;
-      SEM_post(&(mpcsInfo->notifySemObj));
-    }
-    else if (count <= 8) { // Receive 6 data...
-      switch(count) {
-      case 3:
-        target_region.height = (int)info;
-        break;
-      case 4:
-        target_region.width = (int)info;
-        break;
-      case 5:
-        target_region.x = (int)info;
-        break;
-      case 6:
-        target_region.y = (int)info;
-        break;
-      case 7:
-        rows = (int)info;
-        break;
-      case 8:
-        cols = (int)info;
-        SEM_post(&(mpcsInfo->notifySemObj));
-        break;
-      }
-
-      // Confirm reception to GPP
-      NOTIFY_notify(ID_GPP,MPCSXFER_IPS_ID,MPCSXFER_IPS_EVENTNO,(int)0);
-    }
-    else {
-      command = (Uint32)info;
-      SEM_post(&(mpcsInfo->notifySemObj));
-    }*/
   }
 
 //////////////////////////////////////
@@ -536,7 +449,7 @@ void MeanShift_Init() {
     cfg.MaxIter = 8;
     cfg.num_bins = 16;
     cfg.pixel_range = 256;
-    bin_width = (float)cfg.pixel_range / (float)cfg.num_bins;
+    bin_width = cfg.pixel_range / cfg.num_bins;
 }
 
 float* CalWeight(unsigned char* bgr_planes[3], float* target_model,
@@ -551,6 +464,7 @@ float* CalWeight(unsigned char* bgr_planes[3], float* target_model,
     // Debug
     int curr_pixel;
     int bin_value;
+    int tm_fixed, tc_fixed, weight;
 
     //cv::Mat weight(rows,cols,CV_32F,cv::Scalar(1.0000));
     //float *data = (float*)malloc(rows*cols*sizeof(float));
@@ -559,11 +473,72 @@ float* CalWeight(unsigned char* bgr_planes[3], float* target_model,
     }
     // Remember to FREE this one once it is no longer needed in main 
     
-
-    // Debug
+    // Double loop fixed point
+    /*
     for(i = 0; i < rows; i++) {
       for(j = 0; j < cols; j++) {
+        // First
+        curr_pixel  = bgr_planes[0][i*cols + j];
+        bin_value   = curr_pixel/bin_width;
+        tm_fixed    = FloatToFixed(target_model[bin_value]);
+        tc_fixed    = FloatToFixed(target_candidate[bin_value]);
 
+        if(tc_fixed == 0)
+          tc_fixed = 1;
+
+        weight            = DIV(tm_fixed, tc_fixed);
+        data[i*cols + j]  = (float)FixedToFloat((int)SquareRootRounded(weight));
+
+        // Second
+        curr_pixel  = bgr_planes[1][i*cols + j];
+        bin_value   = curr_pixel/bin_width;
+        tm_fixed    = FloatToFixed(target_model[16 + bin_value]);
+        tc_fixed    = FloatToFixed(target_candidate[16 + bin_value]);
+
+        if(tc_fixed == 0)
+          tc_fixed = 1;
+
+        weight            = DIV(tm_fixed, tc_fixed);
+        data[i*cols + j]  = (float)FixedToFloat( MUL( (int)FloatToFixed(data[i*cols + j]), (int)SquareRootRounded(weight) ) );
+
+        // Third
+        curr_pixel  = bgr_planes[2][i*cols + j];
+        bin_value   = curr_pixel/bin_width;
+        tm_fixed    = FloatToFixed(target_model[2*16 + bin_value]);
+        tc_fixed    = FloatToFixed(target_candidate[2*16 + bin_value]);
+
+        if(tc_fixed == 0)
+          tc_fixed = 1;
+
+        weight            = DIV(tm_fixed, tc_fixed);
+        data[i*cols + j]  = (float)FixedToFloat( MUL( (int)FloatToFixed(data[i*cols + j]), (int)SquareRootRounded(weight) ) );
+      } 
+    }
+    */
+
+    // Triple loop fixed point
+    /*
+    for(k = 0; k < 3; k++) {
+      for(i = 0; i < rows; i++) {
+        for(j = 0; j < cols; j++) {
+          curr_pixel = bgr_planes[k][i*cols + j];
+          bin_value = curr_pixel/bin_width;
+          tm_fixed = FloatToFixed(target_model[k*16 + bin_value]);
+          tc_fixed = FloatToFixed(target_candidate[k*16 + bin_value]);
+          if(tc_fixed == 0)
+            tc_fixed = 1;
+
+          weight = DIV(tm_fixed, tc_fixed);
+          data[i*cols + j] = (float)FixedToFloat( MUL( (int)FloatToFixed(data[i*cols + j]), (int)SquareRootRounded(weight) ) );
+        }
+      }
+    }
+    */
+
+    // Double loop floating point
+    /*
+    for(i = 0; i < rows; i++) {
+      for(j = 0; j < cols; j++) {
         curr_pixel = bgr_planes[0][i*cols + j];
         bin_value = curr_pixel/bin_width;
         data[i*cols + j] = (float)sqrt(target_model[bin_value]/target_candidate[bin_value]);
@@ -575,133 +550,26 @@ float* CalWeight(unsigned char* bgr_planes[3], float* target_model,
         curr_pixel = bgr_planes[2][i*cols + j];
         bin_value = curr_pixel/bin_width;
         data[i*cols + j] *= (float)sqrt(target_model[2*16 + bin_value]/target_candidate[2*16 + bin_value]);
-
       }
     }
+    */
 
+    // Triple loop floating point
+    /*
+    for(k = 0; k < 3; k++) {
+      for(i = 0; i < rows; i++) {
+        for(j = 0; j < cols; j++) {
+          curr_pixel = bgr_planes[k][i*cols + j];
+          bin_value = curr_pixel/bin_width;
 
-
-    /*for(k = 0; k < 3;  k++)
-    {
-        row_index = rec.y;
-        for(i = 0; i < rows; i++)
-        {
-            col_index = rec.x;
-            for(j = 0; j < cols; j++)
-            {
-                //int curr_pixel = (bgr_planes[k][row_index*rows + col_index]);
-                
-
-              curr_pixel = (bgr_planes[k][i*cols + j]);
-              bin_value = curr_pixel/bin_width;
-              data[i*cols + j] *= (float)sqrt(target_model[k*16 + bin_value]/target_candidate[k*16 + bin_value]);
-
-              // NEW
-              /*curr_pixel = (bgr_planes[0][i*cols + j]);
-              bin_value = curr_pixel/bin_width;
-              data[i*cols + j] = (float)sqrt(target_model[bin_value]/target_candidate[bin_value]);
-
-              curr_pixel = (bgr_planes[1][i*cols + j]);
-              bin_value = curr_pixel/bin_width;
-              data[i*cols + j] *= (float)sqrt(target_model[16 + bin_value]/target_candidate[bin_value]);
-
-              curr_pixel = (bgr_planes[2][i*cols + j]);
-              bin_value = curr_pixel/bin_width;
-              data[i*cols + j] *= (float)sqrt(target_model[2*16 + bin_value]/target_candidate[bin_value]);
-
-                //data[i*cols + j] = (float)sqrt(target_model[k*16 + bin_value]/target_candidate[k*16 + bin_value]);
-                //col_index++;
-            }
-            //row_index++;
+          if(k == 0)
+            data[i*cols + j] = (float)sqrt(target_model[k*16 + bin_value]/target_candidate[k*16 + bin_value]);
+          else
+            data[i*cols + j] *= (float)sqrt(target_model[k*16 + bin_value]/target_candidate[k*16 + bin_value]);
         }
-    }*/
-
-    //data[0] = target_model[0];
-    // Checked
-    // BGR planes
-    // 
+      }
+    }
+    */
 
     return data;
-}
-
-//cv::Rect MeanShift::track(const cv::Mat &next_frame)
-struct Rect MeanShift_Track(Task_TransferInfo * info, unsigned char* bgr_planes[3], float* target_model)
-{
-    struct Rect next_rect;
-    /*int iter, i, j;
-    float* float_buf;
-    float* target_candidate = (float*) malloc(128 * sizeof(float)); // Error handling?
-    struct Matrix weight;
-    float delta_x, sum_wij, delta_y, centre, norm_i, norm_j;
-    double mult;
-
-    for ( iter = 0; iter < cfg.MaxIter; iter++ )
-    {
-        // Ask GPP for target_candidate, give correct info in buffer and wait for GPP
-        //buf[0] = (unsigned char)target_region.x;
-        //buf[1] = (unsigned char)target_region.y;
-
-        //BCACHE_wbInv ((Ptr)buf, length, TRUE);
-        
-        //NOTIFY_notify(ID_GPP,MPCSXFER_IPS_ID,MPCSXFER_IPS_EVENTNO,(Uint32)20);
-        
-        // Send target_region to GPP, wait for target_candidate in return
-        NOTIFY_notify(ID_GPP,MPCSXFER_IPS_ID,MPCSXFER_IPS_EVENTNO,(int)5);
-        NOTIFY_notify(ID_GPP,MPCSXFER_IPS_ID,MPCSXFER_IPS_EVENTNO,(int)10);
-        
-        SEM_pend (&(info->notifySemObj), SYS_FOREVER);
-
-        // Invalidate cache
-        BCACHE_inv ((Ptr)buf, length, TRUE);
-        
-        // Store target candidate from GPP
-        float_buf = (float*)buf;
-        memcpy(target_candidate, float_buf, 128 * sizeof(float)); // Fixed size (for now)
-
-        // Calculate weight
-        weight = CalWeight(bgr_planes, target_model, target_candidate, target_region);
-
-        delta_x = 0.0;
-        sum_wij = 0.0;
-        delta_y = 0.0;
-        centre = (float)((weight.rows - 1)/2.0);
-        mult = 0.0;
-
-        next_rect.x = target_region.x;
-        next_rect.y = target_region.y;
-        next_rect.width = target_region.width;
-        next_rect.height = target_region.height;
-
-        for(i = 0; i < weight.rows; i++)
-        {
-            for(j = 0; j < weight.cols; j++)
-            {
-                norm_i = (float)(i - centre)/centre;
-                norm_j = (float)(j - centre)/centre;
-                mult = pow(norm_i,2) + pow(norm_j,2) > 1.0 ? 0.0 : 1.0;
-                delta_x += (float)(norm_j * weight.data[i*weight.rows + j] * mult);
-                delta_y += (float)(norm_i * weight.data[i*weight.rows + j] * mult);
-                sum_wij += (float)(weight.data[i*weight.rows + j] * mult);
-            }
-        }
-
-        free(weight.data);
-
-        next_rect.x += (int)((delta_x/sum_wij)*centre);
-        next_rect.y += (int)((delta_y/sum_wij)*centre);
-
-        if(abs(next_rect.x-target_region.x)<1 && abs(next_rect.y-target_region.y)<1)
-        {
-            break;
-        }
-        else
-        {
-            target_region.x = next_rect.x;
-            target_region.y = next_rect.y;
-        }
-    }
-
-    free(target_candidate);*/
-
-    return next_rect;
 }
