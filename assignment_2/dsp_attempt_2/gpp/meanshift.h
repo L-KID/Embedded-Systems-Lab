@@ -5,13 +5,15 @@
 #include "opencv2/core/core.hpp"
 #include "opencv2/imgproc/imgproc.hpp"
 #include "opencv2/highgui/highgui.hpp"
+#include <stdint.h>
+#include "arm_neon.h"
 
 #define PI 3.1415926
 class MeanShift
 {
  private:
     float bin_width;
-    float normalized_C;
+    float32_t normalized_C;
 
 public:
     struct config{

@@ -39,6 +39,8 @@
 #include "markers.h"
 #endif
 
+/* ------------------------------------ Timer                           */
+#include "Timer.h"
 
 /*  ============================================================================
  *  @const   NUM_ARGS
@@ -408,7 +410,9 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
     printf ("Entered pool_notify_Execute ()\n") ;
 	#endif
 
-  start = get_usec();
+  //start = get_usec();
+  Timer totalTimer("Total Time");
+
 
   // Initialize before tracking
   cv::VideoCapture frame_capture = cv::VideoCapture( "car.avi" );
@@ -431,6 +435,8 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
 
   // Newest attempt (this one works).
   // Send target_Region size and target_model to DSP
+
+  totalTimer.Start();
 
   memcpy(&pool_notify_DataBuf[0], &rect.width, sizeof(int));
   memcpy(&pool_notify_DataBuf[0 + sizeof(int)], &rect.height, sizeof(int));
@@ -591,9 +597,16 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
       writer << frame;
   }
 
+  totalTimer.Pause();
+
+  totalTimer.Print();
+
   delete[] dspWeight;
 
-  printf("Sum execution time %lld us.\n", get_usec()-start);
+  //printf("Sum execution time %lld us.\n", get_usec()-start);
+
+  std::cout << "Processed " << fcount << " frames" << std::endl;
+  std::cout << "Time: " << totalTimer.GetTime() <<" sec\nFPS : " << fcount/totalTimer.GetTime() << std::endl;
 
   return status ;
 }

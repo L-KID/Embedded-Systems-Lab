@@ -80,7 +80,13 @@ ALL_CFLAGS := $(INCLUDES)                   \
               -mapcs                        \
               -c                            \
               -mabi=aapcs-linux             \
-              -O3                            \
+			  -Wall -O3 -Wfatal-errors 		\
+			  -mlittle-endian          		\
+			  -mtune=arm9tdmi				\
+			  -mcpu=cortex-a8				\
+			  -mfloat-abi=softfp			\
+			  -mfpu=neon					\
+              -O3                          	\
               $(CFLAGS)
 
 #   ----------------------------------------------------------------------------

@@ -3,7 +3,7 @@
  * you can find all the formula in the paper
 */
 
-#include"meanshift.h"
+#include "meanshift.h"
 
 MeanShift::MeanShift()
 {
@@ -56,21 +56,44 @@ cv::Mat MeanShift::pdf_representation(const cv::Mat &frame, const cv::Rect &rect
     cv::Vec3f bin_value;
 
     int row_index = rect.y;
-    int clo_index = rect.x;
+    int col_index = rect.x;
+
+    float32_t cp_value[4] = {0};
+    float32_t temp_model[4] = {0};
+    float32_t divbybinw = {1.0/bin_width};
+    float32x4_t neon_cp_value, neon_b_value, neon_divbybinw, neon_constant, neon_model;
+    neon_divbybinw = vmovq_n_f32(divbybinw);
 
     for(int i=0;i<rect.height;i++)
     {
-        clo_index = rect.x;
+        col_index = rect.x;
         for(int j=0;j<rect.width;j++)
         {
-            curr_pixel_value = frame.at<cv::Vec3b>(row_index,clo_index);
-            bin_value[0] = (curr_pixel_value[0]/bin_width);
-            bin_value[1] = (curr_pixel_value[1]/bin_width);
-            bin_value[2] = (curr_pixel_value[2]/bin_width);
-            pdf_model.at<float>(0,bin_value[0]) += kernel.at<float>(i,j)*normalized_C;
-            pdf_model.at<float>(1,bin_value[1]) += kernel.at<float>(i,j)*normalized_C;
-            pdf_model.at<float>(2,bin_value[2]) += kernel.at<float>(i,j)*normalized_C;
-            clo_index++;
+            curr_pixel_value = frame.at<cv::Vec3b>(row_index,col_index);
+            
+            cp_value[0] = curr_pixel_value[0];
+            cp_value[1] = curr_pixel_value[1];
+            cp_value[2] = curr_pixel_value[2];
+            neon_cp_value = vld1q_f32(&cp_value[0]);
+
+            neon_b_value = vmulq_f32(neon_cp_value, neon_divbybinw);
+            bin_value[0] = vgetq_lane_f32(neon_b_value, 0);
+            bin_value[1] = vgetq_lane_f32(neon_b_value, 1);
+            bin_value[2] = vgetq_lane_f32(neon_b_value, 2);
+
+            float32_t constant = kernel.at<float>(i,j)*normalized_C;
+            neon_constant = vmovq_n_f32(constant);
+            temp_model[0] = pdf_model.at<float>(0,bin_value[0]);
+            temp_model[1] = pdf_model.at<float>(1,bin_value[1]);
+            temp_model[2] = pdf_model.at<float>(2,bin_value[2]);
+            neon_model = vld1q_f32(&temp_model[0]);
+
+            neon_model = vaddq_f32(neon_model, neon_constant);
+            pdf_model.at<float>(0,bin_value[0]) = vgetq_lane_f32(neon_model, 0);
+            pdf_model.at<float>(1,bin_value[1]) = vgetq_lane_f32(neon_model, 1);
+            pdf_model.at<float>(2,bin_value[2]) = vgetq_lane_f32(neon_model, 2);
+
+            col_index++;
         }
         row_index++;
     }
