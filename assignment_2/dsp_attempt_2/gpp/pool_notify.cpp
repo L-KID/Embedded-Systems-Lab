@@ -35,6 +35,10 @@
 #define MSG_TARGET_CANDIDATE  15
 #define MSG_TRACK             16
 
+/*------------------------------------- Fixed/Floating point conversion */
+const int scale = 16; // 1/2^16
+#define FloatToFixed(x) (x* (float)(1<<scale))
+
 #ifndef ARMCC
 #include "markers.h"
 #endif
@@ -413,7 +417,6 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
   //start = get_usec();
   Timer totalTimer("Total Time");
 
-
   // Initialize before tracking
   cv::VideoCapture frame_capture = cv::VideoCapture( "car.avi" );
 
@@ -436,11 +439,21 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
   // Newest attempt (this one works).
   // Send target_Region size and target_model to DSP
 
-  totalTimer.Start();
-
   memcpy(&pool_notify_DataBuf[0], &rect.width, sizeof(int));
   memcpy(&pool_notify_DataBuf[0 + sizeof(int)], &rect.height, sizeof(int));
+  
+  // Old
   memcpy(&pool_notify_DataBuf[0 + 2*sizeof(int)], ms.target_model.data, ms.target_model.rows*ms.target_model.cols*sizeof(float));
+
+  // New: convert to fixed point on GPP!
+  /*
+  for(int r = 0; r < ms.target_model.rows; r++) {
+    for(int c = 0; c < ms.target_model.cols; c++) {
+      int fixed = FloatToFixed(ms.target_model.at<float>(r,c));
+      memcpy(&pool_notify_DataBuf[0 + 2*sizeof(int) + r*ms.target_model.cols + c], &fixed, sizeof(int));
+    }
+  }
+  */
 
   POOL_writeback (POOL_makePoolId(processorId, SAMPLE_POOL_ID),
                     pool_notify_DataBuf,
@@ -528,7 +541,9 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
         }
 
         // Wait for DSP
+        totalTimer.Start();
         sem_wait(&sem);
+        totalTimer.Pause();
 
         // Tell DSP to execute
         status = NOTIFY_notify (processorId, pool_notify_IPS_ID, pool_notify_IPS_EVENTNO, (Uint32)(7));
@@ -597,16 +612,14 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
       writer << frame;
   }
 
-  totalTimer.Pause();
-
   totalTimer.Print();
 
   delete[] dspWeight;
 
   //printf("Sum execution time %lld us.\n", get_usec()-start);
 
-  std::cout << "Processed " << fcount << " frames" << std::endl;
-  std::cout << "Time: " << totalTimer.GetTime() <<" sec\nFPS : " << fcount/totalTimer.GetTime() << std::endl;
+  //std::cout << "Processed " << fcount << " frames" << std::endl;
+  //std::cout << "Time: " << totalTimer.GetTime() <<" sec\nFPS : " << fcount/totalTimer.GetTime() << std::endl;
 
   return status ;
 }

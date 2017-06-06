@@ -83,7 +83,7 @@ MAPFILE_D := $(OBJDIR_D)/$(MAPFILE)
 #   ----------------------------------------------------------------------------
 #   Compiler and Linker options for Release
 #   ----------------------------------------------------------------------------
-CFLAGS_R := -o3 $(ALL_CFLAGS)
+CFLAGS_R := -o3 -mt $(ALL_CFLAGS)
 OBJDIR_R := Release
 BINDIR_R := $(OBJDIR_R)
 OBJS_R := $(CSRCS:%.c=$(OBJDIR_R)/%.obj) $(ASRCS:%.s62=$(OBJDIR_R)/%.obj)

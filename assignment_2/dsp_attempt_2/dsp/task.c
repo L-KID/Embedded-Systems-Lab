@@ -189,7 +189,7 @@ Int Task_execute (Task_TransferInfo * info)
 
   MeanShift_Init();
 
-  target_model      = (float*) malloc(128*sizeof(float));         // These are fixed size by PDF representation
+  target_model      = (float*) malloc(128*sizeof(int));         // These are fixed size by PDF representation
   target_candidate  = (float*) malloc(128 * sizeof(float));       
 
   // Cannot run if memory is not successfully allocated
@@ -214,7 +214,7 @@ Int Task_execute (Task_TransferInfo * info)
       // Values are int, so copy as int
       memcpy(&target_region.width, &buf[0], sizeof(int));
       memcpy(&target_region.height, &buf[0 + sizeof(int)], sizeof(int));
-      memcpy(target_model, &buf[0 + 2*sizeof(int)], sizeof(float));
+      memcpy(target_model, &buf[0 + 2*sizeof(int)], 128*sizeof(float));
 
       // Allocate memory for bgr planes
       bgr_planes[0] = (unsigned char*)malloc(target_region.width * target_region.height * sizeof(unsigned char));
@@ -359,6 +359,7 @@ float* CalWeight(unsigned char* bgr_planes[3], float* target_model,
         curr_pixel  = bgr_planes[0][i*cols + j];
         bin_value   = curr_pixel/bin_width;
         tm_fixed    = FloatToFixed(target_model[bin_value]);
+        //tm_fixed    = target_model[bin_value];
         tc_fixed    = FloatToFixed(target_candidate[bin_value]);
 
         if(tc_fixed == 0)
@@ -370,6 +371,7 @@ float* CalWeight(unsigned char* bgr_planes[3], float* target_model,
         // Second
         curr_pixel  = bgr_planes[1][i*cols + j];
         bin_value   = curr_pixel/bin_width;
+        //tm_fixed    = target_model[16 + bin_value];
         tm_fixed    = FloatToFixed(target_model[16 + bin_value]);
         tc_fixed    = FloatToFixed(target_candidate[16 + bin_value]);
 
@@ -382,6 +384,7 @@ float* CalWeight(unsigned char* bgr_planes[3], float* target_model,
         // Third
         curr_pixel  = bgr_planes[2][i*cols + j];
         bin_value   = curr_pixel/bin_width;
+        //tm_fixed    = target_model[2*16 + bin_value];
         tm_fixed    = FloatToFixed(target_model[2*16 + bin_value]);
         tc_fixed    = FloatToFixed(target_candidate[2*16 + bin_value]);
 
