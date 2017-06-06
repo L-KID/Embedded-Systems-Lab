@@ -38,6 +38,7 @@
 /*------------------------------------- Fixed/Floating point conversion */
 const int scale = 16; // 1/2^16
 #define FloatToFixed(x) (x* (float)(1<<scale))
+#define FixedToFloat(x) ((float)x/(float)(1<<scale))
 
 #ifndef ARMCC
 #include "markers.h"
@@ -436,6 +437,8 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
   // Wait for DSP to be ready for command
   sem_wait(&sem);
 
+  totalTimer.Start();
+
   // Newest attempt (this one works).
   // Send target_Region size and target_model to DSP
 
@@ -443,17 +446,17 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
   memcpy(&pool_notify_DataBuf[0 + sizeof(int)], &rect.height, sizeof(int));
   
   // Old
-  memcpy(&pool_notify_DataBuf[0 + 2*sizeof(int)], ms.target_model.data, ms.target_model.rows*ms.target_model.cols*sizeof(float));
+  //memcpy(&pool_notify_DataBuf[0 + 2*sizeof(int)], ms.target_model.data, ms.target_model.rows*ms.target_model.cols*sizeof(float));
 
   // New: convert to fixed point on GPP!
-  /*
+  // This can be done more efficiently with a single loop and pointers :)
+  int fixed[128];
   for(int r = 0; r < ms.target_model.rows; r++) {
     for(int c = 0; c < ms.target_model.cols; c++) {
-      int fixed = FloatToFixed(ms.target_model.at<float>(r,c));
-      memcpy(&pool_notify_DataBuf[0 + 2*sizeof(int) + r*ms.target_model.cols + c], &fixed, sizeof(int));
+      fixed[r*ms.target_model.cols + c] = FloatToFixed(ms.target_model.at<float>(r,c));
     }
   }
-  */
+  memcpy(&pool_notify_DataBuf[0 + 2*sizeof(int)], fixed, 128 * sizeof(int));
 
   POOL_writeback (POOL_makePoolId(processorId, SAMPLE_POOL_ID),
                     pool_notify_DataBuf,
@@ -519,7 +522,19 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
         roi = bgr_planes[2](ms.target_Region).clone();
         memcpy(&pool_notify_DataBuf[2 * roi_size], roi.data, roi_size);
 
-        memcpy(&pool_notify_DataBuf[3 * roi_size], target_candidate.data, target_candidate.rows * target_candidate.cols * sizeof(float));
+        // New: float to fix on GPP:
+        // This can be done more efficient with pointers instead of .at and single loop :)
+        // Also, we only need first three rows, as only those are used!
+        int fixed[128];
+        for(int r = 0; r < target_candidate.rows; r++) {
+          for(int c = 0; c < target_candidate.cols; c++) {
+            fixed[r*target_candidate.cols + c] = FloatToFixed(target_candidate.at<float>(r,c));
+          }
+        }
+        memcpy(&pool_notify_DataBuf[3 * roi_size], fixed, 128 * sizeof(int));
+
+        // Old:
+        //memcpy(&pool_notify_DataBuf[3 * roi_size], target_candidate.data, target_candidate.rows * target_candidate.cols * sizeof(float));
 
         POOL_writeback (POOL_makePoolId(processorId, SAMPLE_POOL_ID),
                   pool_notify_DataBuf,
@@ -541,9 +556,7 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
         }
 
         // Wait for DSP
-        totalTimer.Start();
         sem_wait(&sem);
-        totalTimer.Pause();
 
         // Tell DSP to execute
         status = NOTIFY_notify (processorId, pool_notify_IPS_ID, pool_notify_IPS_EVENTNO, (Uint32)(7));
@@ -561,7 +574,15 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
                                         pool_notify_DataBuf,
                                         pool_notify_BufferSize);
 
-        memcpy(dspWeight, pool_notify_DataBuf, ms.target_Region.width * ms.target_Region.height * sizeof(float));
+        //memcpy(dspWeight, pool_notify_DataBuf, ms.target_Region.width * ms.target_Region.height * sizeof(float));
+
+        // We should probably speed up this in some way!
+        int* int_buf = (int*)pool_notify_DataBuf;
+        for(int r = 0; r < ms.target_Region.height; r++) {
+          for(int c = 0; c < ms.target_Region.width; c++) {
+            dspWeight[r*ms.target_Region.width + c] = FixedToFloat(int_buf[r*ms.target_Region.width + c]);
+          }
+        }
 
         float delta_x = 0.0;
         float sum_wij = 0.0;
@@ -611,6 +632,8 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
       // write the frame
       writer << frame;
   }
+
+  totalTimer.Pause();
 
   totalTimer.Print();
 
