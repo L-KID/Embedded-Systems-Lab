@@ -241,52 +241,14 @@ Int Task_execute (Task_TransferInfo * info)
       NOTIFY_notify(ID_GPP,MPCSXFER_IPS_ID,MPCSXFER_IPS_EVENTNO,(Uint32)0);
       break;
 
-    case 2:
-      // Store target_model
-      BCACHE_inv ((Ptr)buf, length, TRUE);
-
-      memcpy(target_model, buf, 128 * sizeof(float));
-
-      NOTIFY_notify(ID_GPP,MPCSXFER_IPS_ID,MPCSXFER_IPS_EVENTNO,(Uint32)0);
-      break;
-
-    case 3:
-      // Store and target_candidate
-      BCACHE_inv ((Ptr)buf, length, TRUE);
-
-      // Values are float, so copy as float, 128 fixed for now
-      memcpy(target_candidate, buf, 128 * sizeof(float));
-
-      NOTIFY_notify(ID_GPP,MPCSXFER_IPS_ID,MPCSXFER_IPS_EVENTNO,(Uint32)0);
-
-      break;
-
     case 4: 
-      // Store blue ROI
+      // Store all ROI and target_candidate
       BCACHE_inv ((Ptr)buf, length, TRUE);
 
       memcpy(bgr_planes[0], buf, target_region.width * target_region.height * sizeof(unsigned char));
       memcpy(bgr_planes[1], &buf[target_region.width * target_region.height * sizeof(unsigned char)], target_region.width * target_region.height * sizeof(unsigned char));
       memcpy(bgr_planes[2], &buf[2 * target_region.width * target_region.height * sizeof(unsigned char)], target_region.width * target_region.height * sizeof(unsigned char));
       memcpy(target_candidate, &buf[3 * target_region.width * target_region.height * sizeof(unsigned char)], 128 * sizeof(float));
-
-      NOTIFY_notify(ID_GPP,MPCSXFER_IPS_ID,MPCSXFER_IPS_EVENTNO,(Uint32)0);
-      break;
-  
-    case 5: 
-      // Store blue ROI
-      BCACHE_inv ((Ptr)buf, length, TRUE);
-
-      memcpy(bgr_planes[1], buf, target_region.width * target_region.height * sizeof(unsigned char));
-
-      NOTIFY_notify(ID_GPP,MPCSXFER_IPS_ID,MPCSXFER_IPS_EVENTNO,(Uint32)0);
-      break;
-
-    case 6: 
-      // Store blue ROI
-      BCACHE_inv ((Ptr)buf, length, TRUE);
-
-      memcpy(bgr_planes[2], buf, target_region.width * target_region.height * sizeof(unsigned char));
 
       NOTIFY_notify(ID_GPP,MPCSXFER_IPS_ID,MPCSXFER_IPS_EVENTNO,(Uint32)0);
       break;
