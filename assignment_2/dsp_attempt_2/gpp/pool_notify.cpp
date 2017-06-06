@@ -399,7 +399,6 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
   DSP_STATUS  status    = DSP_SOK ;
 
   long long start;
-  int row, col;
 
 	#if defined(DSP)
     unsigned char *buf_dsp;
@@ -458,6 +457,10 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
   // Wait for DSP to save target_Region size and target_model
   sem_wait(&sem);
 
+  // Allocate only once
+  float* dspWeight = new float[ms.target_Region.height * ms.target_Region.width];
+  cv::Mat weight = cv::Mat(ms.target_Region.height, ms.target_Region.width, CV_32F, dspWeight);
+
   // Start tracking
   int TotalFrames = 32;
   int fcount;
@@ -478,6 +481,7 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
 
       // Track function from MS class
       cv::Rect next_rect;
+
       for(int iter=0;iter<ms.cfg.MaxIter;iter++)
       {
         cv::Mat target_candidate = ms.pdf_representation(frame, ms.target_Region);
@@ -485,7 +489,7 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
         // Calculate weight on DSP
         // Send ROI of BGR matrices and target_candidate to DSP
         
-        // All at once
+        // Put all data in buffer at once
         cv::Mat roi = bgr_planes[0](ms.target_Region).clone();
         int roi_size = roi.rows * roi.cols * sizeof(unsigned char);
         memcpy(pool_notify_DataBuf, roi.data, roi_size);
@@ -497,7 +501,6 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
         memcpy(&pool_notify_DataBuf[2 * roi_size], roi.data, roi_size);
 
         memcpy(&pool_notify_DataBuf[3 * roi_size], target_candidate.data, target_candidate.rows * target_candidate.cols * sizeof(float));
-
 
         POOL_writeback (POOL_makePoolId(processorId, SAMPLE_POOL_ID),
                   pool_notify_DataBuf,
@@ -533,18 +536,11 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
         // Wait for execution
         sem_wait(&sem);
 
-        // Store weight from DSP
-        float* dspWeight;
-        dspWeight = (float*) malloc(ms.target_Region.width * ms.target_Region.height * sizeof(float));
-
         POOL_invalidate (POOL_makePoolId(processorId, SAMPLE_POOL_ID),
                                         pool_notify_DataBuf,
                                         pool_notify_BufferSize);
 
         memcpy(dspWeight, pool_notify_DataBuf, ms.target_Region.width * ms.target_Region.height * sizeof(float));
-
-
-        cv::Mat weight = cv::Mat(ms.target_Region.height, ms.target_Region.width, CV_32F, dspWeight);
 
         float delta_x = 0.0;
         float sum_wij = 0.0;
@@ -570,7 +566,7 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
             }
         }
 
-        free(dspWeight);
+        //free(dspWeight);
 
         next_rect.x += static_cast<int>((delta_x/sum_wij)*centre);
         next_rect.y += static_cast<int>((delta_y/sum_wij)*centre);
@@ -596,6 +592,8 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
       // write the frame
       writer << frame;
   }
+
+  delete[] dspWeight;
 
   printf("Sum execution time %lld us.\n", get_usec()-start);
 
@@ -769,8 +767,6 @@ STATIC Void pool_notify_Notify (Uint32 eventNo, Pvoid arg, Pvoid info)
     //printf("Notification %8d \n", (int)info);
 	#endif
     /* Post the semaphore. */
-
-  static int count = 0;
 
   if ((int)info == 0) {
     sem_post(&sem); // Let execute
