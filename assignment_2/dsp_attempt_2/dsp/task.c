@@ -363,10 +363,7 @@ int* CalWeight(unsigned char* bgr_planes[3], int* target_model,
         curr_pixel  = bgr_planes[0][i*cols + j];
         bin_value   = curr_pixel/bin_width;
         tm_fixed    = target_model[bin_value];
-        tc_fixed    = target_candidate[bin_value];
-
-        if(tc_fixed == 0)
-          tc_fixed = 1;
+        tc_fixed    = target_candidate[bin_value] + 1;
 
         weight            = DIV(tm_fixed, tc_fixed);
         data[i*cols + j]  = SquareRootRounded(weight);
@@ -375,10 +372,7 @@ int* CalWeight(unsigned char* bgr_planes[3], int* target_model,
         curr_pixel  = bgr_planes[1][i*cols + j];
         bin_value   = curr_pixel/bin_width;
         tm_fixed    = target_model[16 + bin_value];
-        tc_fixed    = target_candidate[16 + bin_value];
-
-        if(tc_fixed == 0)
-          tc_fixed = 1;
+        tc_fixed    = target_candidate[16 + bin_value] + 1;
 
         weight            = DIV(tm_fixed, tc_fixed);
         data[i*cols + j]  = MUL( data[i*cols + j], SquareRootRounded(weight) );
@@ -387,10 +381,7 @@ int* CalWeight(unsigned char* bgr_planes[3], int* target_model,
         curr_pixel  = bgr_planes[2][i*cols + j];
         bin_value   = curr_pixel/bin_width;
         tm_fixed    = target_model[2*16 + bin_value];
-        tc_fixed    = target_candidate[2*16 + bin_value];
-
-        if(tc_fixed == 0)
-          tc_fixed = 1;
+        tc_fixed    = target_candidate[2*16 + bin_value] + 1;
 
         weight            = DIV(tm_fixed, tc_fixed);
         data[i*cols + j]  = MUL( data[i*cols + j], SquareRootRounded(weight) );

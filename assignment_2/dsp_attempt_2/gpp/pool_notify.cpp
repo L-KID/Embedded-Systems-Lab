@@ -531,6 +531,7 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
             fixed[r*target_candidate.cols + c] = FloatToFixed(target_candidate.at<float>(r,c));
           }
         }
+
         memcpy(&pool_notify_DataBuf[3 * roi_size], fixed, 128 * sizeof(int));
 
         // Old:
