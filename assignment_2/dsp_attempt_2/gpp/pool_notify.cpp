@@ -558,31 +558,28 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
       int status = frame_capture.read(frame);
       if( 0 == status ) break;
 
+      // Split frame into BGR
+      std::vector<cv::Mat> bgr_planes;
+      cv::split(frame, bgr_planes);
+
       // track object
       #ifndef ARMCC
       // MCPROF_START();
       #endif
 
-      // Split frame into BGR and send to DSP
-
-
       // Track function from MS class
       cv::Rect next_rect;
       for(int iter=0;iter<ms.cfg.MaxIter;iter++)
       {
-          cv::Mat target_candidate = ms.pdf_representation(frame, ms.target_Region);
+        cv::Mat target_candidate = ms.pdf_representation(frame, ms.target_Region);
 
-          // Calculate weight on DSP
+        // Calculate weight on DSP
+        // Send ROI of BGR matrices to DSP
+        for(int i = 0; i < 3; i++) {
 
-          // Send target_candidate and target_Region position
-          memcpy(&pool_notify_DataBuf[0], &ms.target_Region.x, sizeof(int));
-          memcpy(&pool_notify_DataBuf[4], &ms.target_Region.y, sizeof(int));
-
-          // Check if continuous!!
-          memcpy(&pool_notify_DataBuf[8], target_candidate.data, target_candidate.rows * target_candidate.cols * sizeof(float));
-
-        //memcpy(pool_notify_DataBuf, ms.target_model.data, ms.target_model.rows * ms.target_model.cols * sizeof(float));
-
+          // Put ROI in shared buffer
+          cv::Mat roi = bgr_planes[i](ms.target_Region).clone();
+          copy_uchar_matrix_to_buffer(roi, pool_notify_DataBuf);
 
           POOL_writeback (POOL_makePoolId(processorId, SAMPLE_POOL_ID),
                   pool_notify_DataBuf,
@@ -594,7 +591,8 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
                                (Void *) pool_notify_DataBuf,
                                AddrType_Usr) ;
 
-          status = NOTIFY_notify (processorId, pool_notify_IPS_ID, pool_notify_IPS_EVENTNO, (Uint32)3);
+          // Tell DSP to save it
+          status = NOTIFY_notify (processorId, pool_notify_IPS_ID, pool_notify_IPS_EVENTNO, (Uint32)(4+i));
           if (DSP_FAILED (status)) 
           {
               printf ("NOTIFY_notify () DataBuf failed."
@@ -602,122 +600,102 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
                        (int)status) ;
           }
 
-          //printf("Here\n");
-
-          // Wait for DSP to store target_candidate and target_Region
+          // Wait for DSP
           sem_wait(&sem);
 
-          //printf("Here: 2\n");
+        }
+
+        // Send target_candidate and target_Region position
+        memcpy(&pool_notify_DataBuf[0], &ms.target_Region.x, sizeof(int));
+        memcpy(&pool_notify_DataBuf[4], &ms.target_Region.y, sizeof(int));
+
+        // Check if continuous!!
+        memcpy(&pool_notify_DataBuf[8], target_candidate.data, target_candidate.rows * target_candidate.cols * sizeof(float));
+
+        POOL_writeback (POOL_makePoolId(processorId, SAMPLE_POOL_ID),
+                pool_notify_DataBuf,
+                pool_notify_BufferSize);
+
+        POOL_translateAddr ( POOL_makePoolId(processorId, SAMPLE_POOL_ID),
+                             (void**)&buf_dsp,
+                             AddrType_Dsp,
+                             (Void *) pool_notify_DataBuf,
+                             AddrType_Usr) ;
+
+        status = NOTIFY_notify (processorId, pool_notify_IPS_ID, pool_notify_IPS_EVENTNO, (Uint32)3);
+        if (DSP_FAILED (status)) 
+        {
+            printf ("NOTIFY_notify () DataBuf failed."
+                    " Status = [0x%x]\n",
+                     (int)status) ;
+        }
+
+        // Wait for DSP to store target_candidate and target_Region
+        sem_wait(&sem);
+
+        // Tell DSP to execute
+        status = NOTIFY_notify (processorId, pool_notify_IPS_ID, pool_notify_IPS_EVENTNO, (Uint32)(7));
+        if (DSP_FAILED (status)) 
+        {
+            printf ("NOTIFY_notify () DataBuf failed."
+                    " Status = [0x%x]\n",
+                     (int)status) ;
+        }
+
+        // Wait for execution
+        sem_wait(&sem);
+
+        // Store weight from DSP
+        float* dspWeight;
+        dspWeight = (float*) malloc(ms.target_Region.width * ms.target_Region.height * sizeof(float));
+
+        POOL_invalidate (POOL_makePoolId(processorId, SAMPLE_POOL_ID),
+                                        pool_notify_DataBuf,
+                                        pool_notify_BufferSize);
+
+        memcpy(dspWeight, pool_notify_DataBuf, ms.target_Region.width * ms.target_Region.height * sizeof(float));
 
 
+        cv::Mat weight = cv::Mat(ms.target_Region.height, ms.target_Region.width, CV_32F, dspWeight);
 
+        float delta_x = 0.0;
+        float sum_wij = 0.0;
+        float delta_y = 0.0;
+        float centre = static_cast<float>((weight.rows-1)/2.0);
+        double mult = 0.0;
 
+        next_rect.x = ms.target_Region.x;
+        next_rect.y = ms.target_Region.y;
+        next_rect.width = ms.target_Region.width;
+        next_rect.height = ms.target_Region.height;
 
-
-
-
-
-
-          // Split frame into bgr matrices, doing this too many times...
-          std::vector<cv::Mat> bgr_planes;
-          cv::split(frame, bgr_planes);
-
-          // Send ROI of BGR matrices to DSP
-          for(int i = 0; i < 3; i++) {
-
-            //printf("Here: 3\n");
-
-            // Put ROI in shared buffer
-            cv::Mat roi = bgr_planes[i](ms.target_Region).clone();
-            copy_uchar_matrix_to_buffer(roi, pool_notify_DataBuf);
-
-            POOL_writeback (POOL_makePoolId(processorId, SAMPLE_POOL_ID),
-                    pool_notify_DataBuf,
-                    pool_notify_BufferSize);
-
-            POOL_translateAddr ( POOL_makePoolId(processorId, SAMPLE_POOL_ID),
-                                 (void**)&buf_dsp,
-                                 AddrType_Dsp,
-                                 (Void *) pool_notify_DataBuf,
-                                 AddrType_Usr) ;
-
-            // Tell DSP to save it
-            status = NOTIFY_notify (processorId, pool_notify_IPS_ID, pool_notify_IPS_EVENTNO, (Uint32)(4+i));
-            if (DSP_FAILED (status)) 
+        for(int i=0;i<weight.rows;i++)
+        {
+            for(int j=0;j<weight.cols;j++)
             {
-                printf ("NOTIFY_notify () DataBuf failed."
-                        " Status = [0x%x]\n",
-                         (int)status) ;
+                float norm_i = static_cast<float>(i-centre)/centre;
+                float norm_j = static_cast<float>(j-centre)/centre;
+                mult = pow(norm_i,2)+pow(norm_j,2)>1.0?0.0:1.0;
+                delta_x += static_cast<float>(norm_j*weight.at<float>(i,j)*mult);
+                delta_y += static_cast<float>(norm_i*weight.at<float>(i,j)*mult);
+                sum_wij += static_cast<float>(weight.at<float>(i,j)*mult);
             }
+        }
 
-            // Wait for DSP
-            sem_wait(&sem);
+        free(dspWeight);
 
-          }
+        next_rect.x += static_cast<int>((delta_x/sum_wij)*centre);
+        next_rect.y += static_cast<int>((delta_y/sum_wij)*centre);
 
-          // Tell DSP to execute
-          status = NOTIFY_notify (processorId, pool_notify_IPS_ID, pool_notify_IPS_EVENTNO, (Uint32)(7));
-          if (DSP_FAILED (status)) 
-          {
-              printf ("NOTIFY_notify () DataBuf failed."
-                      " Status = [0x%x]\n",
-                       (int)status) ;
-          }
-
-          // Wait for execution
-          sem_wait(&sem);
-
-          // Store weight from DSP
-          float* dspWeight;
-          dspWeight = (float*) malloc(ms.target_Region.width * ms.target_Region.height * sizeof(float));
-
-          POOL_invalidate (POOL_makePoolId(processorId, SAMPLE_POOL_ID),
-                                          pool_notify_DataBuf,
-                                          pool_notify_BufferSize);
-
-          memcpy(dspWeight, pool_notify_DataBuf, ms.target_Region.width * ms.target_Region.height * sizeof(float));
-
-
-          cv::Mat weight = cv::Mat(ms.target_Region.height, ms.target_Region.width, CV_32F, dspWeight);
-
-          float delta_x = 0.0;
-          float sum_wij = 0.0;
-          float delta_y = 0.0;
-          float centre = static_cast<float>((weight.rows-1)/2.0);
-          double mult = 0.0;
-
-          next_rect.x = ms.target_Region.x;
-          next_rect.y = ms.target_Region.y;
-          next_rect.width = ms.target_Region.width;
-          next_rect.height = ms.target_Region.height;
-
-          for(int i=0;i<weight.rows;i++)
-          {
-              for(int j=0;j<weight.cols;j++)
-              {
-                  float norm_i = static_cast<float>(i-centre)/centre;
-                  float norm_j = static_cast<float>(j-centre)/centre;
-                  mult = pow(norm_i,2)+pow(norm_j,2)>1.0?0.0:1.0;
-                  delta_x += static_cast<float>(norm_j*weight.at<float>(i,j)*mult);
-                  delta_y += static_cast<float>(norm_i*weight.at<float>(i,j)*mult);
-                  sum_wij += static_cast<float>(weight.at<float>(i,j)*mult);
-              }
-          }
-
-          free(dspWeight);
-
-          next_rect.x += static_cast<int>((delta_x/sum_wij)*centre);
-          next_rect.y += static_cast<int>((delta_y/sum_wij)*centre);
-
-          if(abs(next_rect.x-ms.target_Region.x)<1 && abs(next_rect.y-ms.target_Region.y)<1)
-          {
-              break;
-          }
-          else
-          {
-              ms.target_Region.x = next_rect.x;
-              ms.target_Region.y = next_rect.y;
-          }
+        if(abs(next_rect.x-ms.target_Region.x)<1 && abs(next_rect.y-ms.target_Region.y)<1)
+        {
+            break;
+        }
+        else
+        {
+            ms.target_Region.x = next_rect.x;
+            ms.target_Region.y = next_rect.y;
+        }
       }      
 
       #ifndef ARMCC
