@@ -181,7 +181,7 @@ int sum_dsp()
 }
 
 // Command from GPP to DSP
-Uint32 command;
+Uint32 command = 1000;
 
 // This is the rectangle that is around the target
 struct Rect target_region;
@@ -191,15 +191,6 @@ Int Task_execute (Task_TransferInfo * info)
 {
   int i;
 
-  // In order to retreive float values over the buffer
-  float* float_buf;
-
-  //int* int_buf;
-
-  // This is the candidate that we think is the model
-  //float* target_candidate = (float*) malloc(128*sizeof(float)); // Currently assuming fixed size (since it is)
-
-  // This is the original selection that we're looking to track
   float* target_model;
   float* target_candidate;
   float* result;
@@ -209,15 +200,10 @@ Int Task_execute (Task_TransferInfo * info)
 
   MeanShift_Init();
 
-  //NOTIFY_notify(ID_GPP,MPCSXFER_IPS_ID,MPCSXFER_IPS_EVENTNO,(Uint32)1000);
-  
-  command = 1000; // So it's not accidentally 0
+  target_model      = (float*) malloc(128*sizeof(float));         // These are fixed size by PDF representation
+  target_candidate  = (float*) malloc(128 * sizeof(float));       
 
-  target_model = (float*) malloc(128*sizeof(float));        // Currently assuming fixed size (since it is)
-  target_candidate = (float*) malloc(128 * sizeof(float));  // Currently assuming fixed size (since it is)
-
-  //NOTIFY_notify(ID_GPP,MPCSXFER_IPS_ID,MPCSXFER_IPS_EVENTNO,(Uint32)1001);
-
+  // Cannot run if memory is not successfully allocated
   if (target_model == NULL || target_candidate == NULL) { 
     NOTIFY_notify(ID_GPP,MPCSXFER_IPS_ID,MPCSXFER_IPS_EVENTNO,(Uint32)666);
     return 0;
@@ -237,10 +223,16 @@ Int Task_execute (Task_TransferInfo * info)
       BCACHE_inv ((Ptr)buf, length, TRUE);
 
       // Values are int, so copy as int
+      /*
       memcpy(&target_region.x, &buf[0], sizeof(int));
       memcpy(&target_region.y, &buf[4], sizeof(int));
       memcpy(&target_region.width, &buf[8], sizeof(int));
       memcpy(&target_region.height, &buf[12], sizeof(int));
+      */
+
+      memcpy(&target_region.width, &buf[0], sizeof(int));
+      memcpy(&target_region.height, &buf[0 + sizeof(int)], sizeof(int));
+      memcpy(target_model, &buf[0 + 2*sizeof(int)], sizeof(int));
 
       // Allocate memory for bgr planes
       bgr_planes[0] = (unsigned char*)malloc(target_region.width * target_region.height * sizeof(unsigned char));
@@ -254,7 +246,7 @@ Int Task_execute (Task_TransferInfo * info)
       }
 
       bgr_planes[2] = (unsigned char*)malloc(target_region.width * target_region.height * sizeof(unsigned char));
-      if(bgr_planes[1] == NULL) {
+      if(bgr_planes[2] == NULL) {
         NOTIFY_notify(ID_GPP,MPCSXFER_IPS_ID,MPCSXFER_IPS_EVENTNO,(Uint32)666);
       }
 
@@ -272,54 +264,34 @@ Int Task_execute (Task_TransferInfo * info)
       BCACHE_inv ((Ptr)buf, length, TRUE);
 
       memcpy(target_model, buf, 128 * sizeof(float));
-      //NOTIFY_notify(ID_GPP,MPCSXFER_IPS_ID,MPCSXFER_IPS_EVENTNO,(Uint32)1003);
-
-      // Debugging
-      float_buf = (float*)buf;
-      float_buf[0] = target_model[1];
-      //NOTIFY_notify(ID_GPP,MPCSXFER_IPS_ID,MPCSXFER_IPS_EVENTNO,(Uint32)1004);
-
-      BCACHE_wbInv ((Ptr)buf, length, TRUE);
 
       NOTIFY_notify(ID_GPP,MPCSXFER_IPS_ID,MPCSXFER_IPS_EVENTNO,(Uint32)0);
       break;
 
     case 3:
-      // Store target_region and target_candidate
+      // Store and target_candidate
       BCACHE_inv ((Ptr)buf, length, TRUE);
 
-      // Values are int, so copy as int
-      memcpy(&target_region.x, &buf[0], sizeof(int));
-      memcpy(&target_region.y, &buf[4], sizeof(int));
-
       // Values are float, so copy as float, 128 fixed for now
-      memcpy(target_candidate, &buf[8], 128 * sizeof(float));
+      memcpy(target_candidate, buf, 128 * sizeof(float));
 
-      //NOTIFY_notify(ID_GPP,MPCSXFER_IPS_ID,MPCSXFER_IPS_EVENTNO,(Uint32)1005);
       NOTIFY_notify(ID_GPP,MPCSXFER_IPS_ID,MPCSXFER_IPS_EVENTNO,(Uint32)0);
 
       break;
 
     case 4: 
-      /*bgr_planes[0] = (unsigned char*)malloc(target_region.width * target_region.height * sizeof(unsigned char));
-      if (bgr_planes[0] == NULL) {
-        NOTIFY_notify(ID_GPP,MPCSXFER_IPS_ID,MPCSXFER_IPS_EVENTNO,(Uint32)667);
-      }*/
-
       // Store blue ROI
       BCACHE_inv ((Ptr)buf, length, TRUE);
 
       memcpy(bgr_planes[0], buf, target_region.width * target_region.height * sizeof(unsigned char));
+      memcpy(bgr_planes[1], &buf[target_region.width * target_region.height * sizeof(unsigned char)], target_region.width * target_region.height * sizeof(unsigned char));
+      memcpy(bgr_planes[2], &buf[2 * target_region.width * target_region.height * sizeof(unsigned char)], target_region.width * target_region.height * sizeof(unsigned char));
+      memcpy(target_candidate, &buf[3 * target_region.width * target_region.height * sizeof(unsigned char)], 128 * sizeof(float));
 
       NOTIFY_notify(ID_GPP,MPCSXFER_IPS_ID,MPCSXFER_IPS_EVENTNO,(Uint32)0);
       break;
   
     case 5: 
-      /*bgr_planes[1] = (unsigned char*)malloc(target_region.width * target_region.height * sizeof(unsigned char));
-      if (bgr_planes[1] == NULL) {
-        NOTIFY_notify(ID_GPP,MPCSXFER_IPS_ID,MPCSXFER_IPS_EVENTNO,(Uint32)667);
-      }*/
-
       // Store blue ROI
       BCACHE_inv ((Ptr)buf, length, TRUE);
 
@@ -329,11 +301,6 @@ Int Task_execute (Task_TransferInfo * info)
       break;
 
     case 6: 
-      /*bgr_planes[2] = (unsigned char*)malloc(target_region.width * target_region.height * sizeof(unsigned char));
-      if (bgr_planes[2] == NULL) {
-        NOTIFY_notify(ID_GPP,MPCSXFER_IPS_ID,MPCSXFER_IPS_EVENTNO,(Uint32)667);
-      }*/
-
       // Store blue ROI
       BCACHE_inv ((Ptr)buf, length, TRUE);
 
@@ -346,37 +313,10 @@ Int Task_execute (Task_TransferInfo * info)
       // Calculate weight
       CalWeight(bgr_planes, target_model, target_candidate, target_region, result);
 
-      // Check for NULL?
-      if (result == NULL) {
-        NOTIFY_notify(ID_GPP,MPCSXFER_IPS_ID,MPCSXFER_IPS_EVENTNO,(Uint32)668);
-      }
-
-      /*if(result[0] < 1 && result[0] > 0) {
-        NOTIFY_notify(ID_GPP,MPCSXFER_IPS_ID,MPCSXFER_IPS_EVENTNO,(Uint32)777);
-      }*/
-
-      //NOTIFY_notify(ID_GPP,MPCSXFER_IPS_ID,MPCSXFER_IPS_EVENTNO,(Uint32)777);
-
+      // Copy weight to shared buffer
       memcpy(buf, result, target_region.width * target_region.height * sizeof(float));
-      //float_buf = (float*)buf;
-
-      //float_buf[0] = bgr_planes[1][1*target_region.width + 10];
-
-      //result[0] = 1.6f;
-
-      // Checked
-
-      //float_buf[0] = result[0];
-      //float_buf[0] = target_model[0]; OK
-      //float_buf[0] = target_candidate[0]; OK
       
-      //float_buf[0] = bgr_planes[1][target_region.width + 5];
-
-      //float_buf[0] = (float)target_region.width;
-      //float_buf[0] = (float)target_region.height;
       BCACHE_wbInv ((Ptr)buf, length, TRUE);
-
-      //free(result);
 
       NOTIFY_notify(ID_GPP,MPCSXFER_IPS_ID,MPCSXFER_IPS_EVENTNO,(Uint32)0);
       break;

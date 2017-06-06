@@ -338,22 +338,6 @@ NORMAL_API DSP_STATUS pool_notify_Create (	IN Char8 * dspExecutable,
     return status ;
 }
 
-cv::Mat kernel;
-
-void unit_init(void) 
-{
-    unsigned int i;
-
-    // Initialize the array with something
-    for(i=0;i<pool_notify_BufferSize;i++) {
-       pool_notify_DataBuf[i] = i % 20 + i % 5;
-    }
-
-    for(i=0;i<10;i++) {
-       printf("Value before: %d\n", pool_notify_DataBuf[i]);
-    }
-}
-
 #include <sys/time.h>
 
 long long get_usec(void);
@@ -365,54 +349,6 @@ long long get_usec(void)
   gettimeofday(&t,NULL);
   r=t.tv_sec*1000000+t.tv_usec;
   return r;
-}
-
-int sum_dsp(unsigned char* buf, int length) 
-{
-    int a=0,i;
-    for(i=0;i<length;i++) 
-	{
-       a=a+buf[i];
-    }
-    return a;
-}
-
-std::vector<uchar> matrix_to_vector(cv::Mat matrix) 
-{
-    std::vector<uchar> vec(matrix.rows * matrix.cols);
-    if (matrix.isContinuous()) {
-        vec.assign(matrix.datastart, matrix.dataend);
-    } else {
-        for (int i = 0; i < matrix.rows; ++i) {
-            vec.insert(vec.end(), matrix.ptr<uchar>(i), matrix.ptr<uchar>(i) + matrix.cols);
-        }
-    }
-
-    return vec;
-}
-
-std::vector<float> float_matrix_to_vector(cv::Mat matrix) 
-{
-
-    printf("Matrix rows: %d cols: %d\n", matrix.rows, matrix.cols);
-
-    std::vector<float> vec(matrix.rows * matrix.cols);
-
-    printf("Vector size: %d\n", vec.size());
-    printf("Data type: %d\n", matrix.type());
-    printf("Size of float: %d\n", sizeof(float));
-    printf("Data length: %d\n", matrix.datastart - matrix.dataend);
-    if (matrix.isContinuous()) {
-        vec.assign(matrix.datastart, matrix.dataend);
-    } else {
-        for (int i = 0; i < matrix.rows; ++i) {
-            vec.insert(vec.end(), matrix.ptr<float>(i), matrix.ptr<float>(i) + matrix.cols);
-        }
-    }
-
-    printf("Vector size: %d\n", vec.size());
-
-    return vec;
 }
 
 void copy_float_matrix_to_buffer(cv::Mat matrix, unsigned char* buffer) 
@@ -481,8 +417,7 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
   // this is used for testing the car video
   // instead of selection of object of interest using mouse
   // Constructor is x, y, width, height
-  int rect_data[4] = {228, 367, 86, 58};
-  cv::Rect rect(rect_data[0], rect_data[1], rect_data[2], rect_data[3]);
+  cv::Rect rect(228, 367, 86, 58);
   cv::Mat frame;
   frame_capture.read(frame);
   
@@ -490,16 +425,17 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
   ms.Init_target_frame(frame,rect); // init the meanshift
 
   int codec = CV_FOURCC('F', 'L', 'V', '1');
-  //cv::VideoWriter writer("tracking_result.avi", codec, 20, cv::Size(frame.cols,frame.rows));
   cv::VideoWriter writer("tracking_result.avi", codec, 20, cv::Size(frame.cols, frame.rows));
-
 
   // Wait for DSP to be ready for command
   sem_wait(&sem);
 
   // Newest attempt (this one works).
-  // Send target_Region to DSP
-  memcpy(pool_notify_DataBuf, rect_data, 4 * sizeof(int));
+  // Send target_Region size and target_model to DSP
+
+  memcpy(&pool_notify_DataBuf[0], &rect.width, sizeof(int));
+  memcpy(&pool_notify_DataBuf[0 + sizeof(int)], &rect.height, sizeof(int));
+  memcpy(&pool_notify_DataBuf[0 + 2*sizeof(int)], ms.target_model.data, ms.target_model.rows*ms.target_model.cols*sizeof(float));
 
   POOL_writeback (POOL_makePoolId(processorId, SAMPLE_POOL_ID),
                     pool_notify_DataBuf,
@@ -519,34 +455,7 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
                (int)status) ;
   }
 
-  // Wait for DSP to save rectangle data
-  sem_wait(&sem);
-
-  // Send target_model to DSP
-  if(ms.target_model.isContinuous()) {
-      //std::copy(ms.target_model.datastart, ms.target_model.dataend, pool_notify_DataBuf);
-      memcpy(pool_notify_DataBuf, ms.target_model.data, ms.target_model.rows * ms.target_model.cols * sizeof(float));
-      //printf("Success\n");
-
-      POOL_writeback (POOL_makePoolId(processorId, SAMPLE_POOL_ID),
-                  pool_notify_DataBuf,
-                  pool_notify_BufferSize);
-
-      POOL_translateAddr ( POOL_makePoolId(processorId, SAMPLE_POOL_ID),
-                           (void**)&buf_dsp,
-                           AddrType_Dsp,
-                           (Void *) pool_notify_DataBuf,
-                           AddrType_Usr) ;
-
-      status = NOTIFY_notify (processorId, pool_notify_IPS_ID, pool_notify_IPS_EVENTNO, (Uint32)2);
-      if (DSP_FAILED (status)) 
-      {
-          printf ("NOTIFY_notify () DataBuf failed."
-                  " Status = [0x%x]\n",
-                   (int)status) ;
-      }
-  }
-
+  // Wait for DSP to save target_Region size and target_model
   sem_wait(&sem);
 
   // Start tracking
@@ -574,47 +483,25 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
         cv::Mat target_candidate = ms.pdf_representation(frame, ms.target_Region);
 
         // Calculate weight on DSP
-        // Send ROI of BGR matrices to DSP
-        for(int i = 0; i < 3; i++) {
+        // Send ROI of BGR matrices and target_candidate to DSP
+        
+        // All at once
+        cv::Mat roi = bgr_planes[0](ms.target_Region).clone();
+        int roi_size = roi.rows * roi.cols * sizeof(unsigned char);
+        memcpy(pool_notify_DataBuf, roi.data, roi_size);
 
-          // Put ROI in shared buffer
-          cv::Mat roi = bgr_planes[i](ms.target_Region).clone();
-          copy_uchar_matrix_to_buffer(roi, pool_notify_DataBuf);
+        roi = bgr_planes[1](ms.target_Region).clone();
+        memcpy(&pool_notify_DataBuf[roi_size], roi.data, roi_size);
 
-          POOL_writeback (POOL_makePoolId(processorId, SAMPLE_POOL_ID),
-                  pool_notify_DataBuf,
-                  pool_notify_BufferSize);
+        roi = bgr_planes[2](ms.target_Region).clone();
+        memcpy(&pool_notify_DataBuf[2 * roi_size], roi.data, roi_size);
 
-          POOL_translateAddr ( POOL_makePoolId(processorId, SAMPLE_POOL_ID),
-                               (void**)&buf_dsp,
-                               AddrType_Dsp,
-                               (Void *) pool_notify_DataBuf,
-                               AddrType_Usr) ;
+        memcpy(&pool_notify_DataBuf[3 * roi_size], target_candidate.data, target_candidate.rows * target_candidate.cols * sizeof(float));
 
-          // Tell DSP to save it
-          status = NOTIFY_notify (processorId, pool_notify_IPS_ID, pool_notify_IPS_EVENTNO, (Uint32)(4+i));
-          if (DSP_FAILED (status)) 
-          {
-              printf ("NOTIFY_notify () DataBuf failed."
-                      " Status = [0x%x]\n",
-                       (int)status) ;
-          }
-
-          // Wait for DSP
-          sem_wait(&sem);
-
-        }
-
-        // Send target_candidate and target_Region position
-        memcpy(&pool_notify_DataBuf[0], &ms.target_Region.x, sizeof(int));
-        memcpy(&pool_notify_DataBuf[4], &ms.target_Region.y, sizeof(int));
-
-        // Check if continuous!!
-        memcpy(&pool_notify_DataBuf[8], target_candidate.data, target_candidate.rows * target_candidate.cols * sizeof(float));
 
         POOL_writeback (POOL_makePoolId(processorId, SAMPLE_POOL_ID),
-                pool_notify_DataBuf,
-                pool_notify_BufferSize);
+                  pool_notify_DataBuf,
+                  pool_notify_BufferSize);
 
         POOL_translateAddr ( POOL_makePoolId(processorId, SAMPLE_POOL_ID),
                              (void**)&buf_dsp,
@@ -622,7 +509,8 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
                              (Void *) pool_notify_DataBuf,
                              AddrType_Usr) ;
 
-        status = NOTIFY_notify (processorId, pool_notify_IPS_ID, pool_notify_IPS_EVENTNO, (Uint32)3);
+        // Tell DSP to save it
+        status = NOTIFY_notify (processorId, pool_notify_IPS_ID, pool_notify_IPS_EVENTNO, (Uint32)(4));
         if (DSP_FAILED (status)) 
         {
             printf ("NOTIFY_notify () DataBuf failed."
@@ -630,7 +518,7 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
                      (int)status) ;
         }
 
-        // Wait for DSP to store target_candidate and target_Region
+        // Wait for DSP
         sem_wait(&sem);
 
         // Tell DSP to execute
