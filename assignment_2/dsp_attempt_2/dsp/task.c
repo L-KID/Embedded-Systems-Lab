@@ -417,7 +417,6 @@ Int Task_delete (Task_TransferInfo * info)
     return status ;
 }
 
-
 static Void Task_notify (Uint32 eventNo, Ptr arg, Ptr info)
 {
     static int count = 0;
@@ -441,9 +440,9 @@ static Void Task_notify (Uint32 eventNo, Ptr arg, Ptr info)
     }
   }
 
-//////////////////////////////////////
-// MeanShift Functions
-//////////////////////////////////////
+/////////////////////////
+// MeanShift Functions //
+/////////////////////////
 
 void MeanShift_Init() {
     cfg.MaxIter = 8;
@@ -458,23 +457,18 @@ float* CalWeight(unsigned char* bgr_planes[3], float* target_model,
     int k, i, j;
     int rows = rec.height;
     int cols = rec.width;
-    int row_index = rec.y;
-    int col_index = rec.x;
 
     // Debug
     int curr_pixel;
     int bin_value;
     int tm_fixed, tc_fixed, weight;
 
-    //cv::Mat weight(rows,cols,CV_32F,cv::Scalar(1.0000));
-    //float *data = (float*)malloc(rows*cols*sizeof(float));
+    // Memory problem, should be checked outside?
     if (data == NULL) {
       return NULL;
     }
-    // Remember to FREE this one once it is no longer needed in main 
-    
+
     // Double loop fixed point
-    /*
     for(i = 0; i < rows; i++) {
       for(j = 0; j < cols; j++) {
         // First
@@ -514,7 +508,6 @@ float* CalWeight(unsigned char* bgr_planes[3], float* target_model,
         data[i*cols + j]  = (float)FixedToFloat( MUL( (int)FloatToFixed(data[i*cols + j]), (int)SquareRootRounded(weight) ) );
       } 
     }
-    */
 
     // Triple loop fixed point
     /*
@@ -529,7 +522,10 @@ float* CalWeight(unsigned char* bgr_planes[3], float* target_model,
             tc_fixed = 1;
 
           weight = DIV(tm_fixed, tc_fixed);
-          data[i*cols + j] = (float)FixedToFloat( MUL( (int)FloatToFixed(data[i*cols + j]), (int)SquareRootRounded(weight) ) );
+          if(k == 0)
+            data[i*cols + j] = (float)FixedToFloat((int)SquareRootRounded(weight));
+          else
+            data[i*cols + j] = (float)FixedToFloat( MUL( (int)FloatToFixed(data[i*cols + j]), (int)SquareRootRounded(weight) ) );
         }
       }
     }
