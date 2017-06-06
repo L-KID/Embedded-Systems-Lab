@@ -4,9 +4,3 @@ struct Rect {
 	int x;
 	int y;
 };
-
-struct Matrix {
-	int rows;
-	int cols;
-	float* data;
-};

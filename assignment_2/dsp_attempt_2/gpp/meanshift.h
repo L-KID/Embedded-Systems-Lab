@@ -11,6 +11,7 @@ class MeanShift
 {
  private:
     float bin_width;
+    float normalized_C;
 
 public:
     struct config{

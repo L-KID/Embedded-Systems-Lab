@@ -42,8 +42,13 @@ float  MeanShift::Epanechnikov_kernel(cv::Mat &kernel)
 }
 cv::Mat MeanShift::pdf_representation(const cv::Mat &frame, const cv::Rect &rect)
 {
+    static int k = 0;
+
     cv::Mat kernel(rect.height,rect.width,CV_32F,cv::Scalar(0));
-    float normalized_C = 1.0 / Epanechnikov_kernel(kernel);
+    if(k == 0) {
+        normalized_C = 1.0 / Epanechnikov_kernel(kernel);
+        k++;
+    }
 
     cv::Mat pdf_model(8,16,CV_32F,cv::Scalar(1e-10));
 
@@ -86,8 +91,6 @@ cv::Mat MeanShift::CalWeight(const cv::Mat &frame, cv::Mat &target_model,
     std::vector<cv::Mat> bgr_planes;
     cv::split(frame, bgr_planes);
 
-    printf("GPP: %u\n", bgr_planes[1].at<uchar>(rec.y + 1 , rec.x + 10));
-
     for(int k = 0; k < 3;  k++)
     {
         row_index = rec.y;
@@ -105,21 +108,6 @@ cv::Mat MeanShift::CalWeight(const cv::Mat &frame, cv::Mat &target_model,
         }
     }
 
-    // DEBUGGING
-    /*for ( int l = 0; l < 10; l++) {
-        printf(" %d ", bgr_planes[0].at<uchar>(rec.y, rec.x + l));
-    }
-    printf("\n\n");
-
-    cv::Mat testMat = bgr_planes[0](rec).clone();
-    for ( int m = 0; m < 10; m++) {
-        printf(" %d ", testMat.at<uchar>(0, m));
-    }
-    printf("\n");
-    printf("Rows: %d cols: %d\n", testMat.rows, testMat.cols);
-    printf("Data length: %d\n", testMat.dataend - testMat.datastart);
-    printf("Other data length: %d\n\n", testMat.dataend - testMat.data);
-*/
     return weight;
 }
 

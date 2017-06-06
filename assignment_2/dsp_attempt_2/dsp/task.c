@@ -169,17 +169,6 @@ Int Task_create (Task_TransferInfo ** infoPtr)
 unsigned char* buf;
 int length;
 
-int sum_dsp() 
-{
-    int sum=0,i;
-    for(i=0;i<length;i++) 
-	{
-       sum=sum+buf[i];
-       buf[i]++;
-    }
-    return sum;
-}
-
 // Command from GPP to DSP
 Uint32 command = 1000;
 
@@ -223,16 +212,9 @@ Int Task_execute (Task_TransferInfo * info)
       BCACHE_inv ((Ptr)buf, length, TRUE);
 
       // Values are int, so copy as int
-      /*
-      memcpy(&target_region.x, &buf[0], sizeof(int));
-      memcpy(&target_region.y, &buf[4], sizeof(int));
-      memcpy(&target_region.width, &buf[8], sizeof(int));
-      memcpy(&target_region.height, &buf[12], sizeof(int));
-      */
-
       memcpy(&target_region.width, &buf[0], sizeof(int));
       memcpy(&target_region.height, &buf[0 + sizeof(int)], sizeof(int));
-      memcpy(target_model, &buf[0 + 2*sizeof(int)], sizeof(int));
+      memcpy(target_model, &buf[0 + 2*sizeof(int)], sizeof(float));
 
       // Allocate memory for bgr planes
       bgr_planes[0] = (unsigned char*)malloc(target_region.width * target_region.height * sizeof(unsigned char));
