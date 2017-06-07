@@ -72,7 +72,6 @@ cv::Mat MeanShift::pdf_representation(const cv::Mat &frame, const cv::Rect &rect
         col_index = rect.x;
         for(int j=0;j<rect.width/4;j++)
         {
-
             curr_pixel_value_A = frame.at<cv::Vec3b>(row_index,col_index);
             curr_pixel_value_B = frame.at<cv::Vec3b>(row_index,col_index+1);
             curr_pixel_value_C = frame.at<cv::Vec3b>(row_index,col_index+2);

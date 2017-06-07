@@ -21,22 +21,19 @@
 #include "meanshift.h"
 #include <string.h>
 #include <stdlib.h>
-#include <math.h>
-//#include "opencv2/core/core.hpp"
 
 extern Uint16 MPCSXFER_BufferSize ;
-
 
 static Void Task_notify (Uint32 eventNo, Ptr arg, Ptr info) ;
 
 //////////////////////////////
 // For MeanShift
 ////////////////////////////
-int bin_width;
+unsigned char bin_width;
 struct config {
-    int num_bins;
+    unsigned char num_bins;
     int pixel_range;
-    int MaxIter;
+    unsigned char MaxIter;
 } cfg;
 
 void MeanShift_Init();
@@ -170,8 +167,6 @@ int rows, cols;
 
 Int Task_execute (Task_TransferInfo * info)
 {
-  int i;
-
   int* target_candidate;
   int* result;
 
@@ -205,9 +200,6 @@ Int Task_execute (Task_TransferInfo * info)
       memcpy(&target_region.width, &buf[0], sizeof(int));
       memcpy(&target_region.height, &buf[0 + sizeof(int)], sizeof(int));
 
-      // Debug
-      NOTIFY_notify(ID_GPP,MPCSXFER_IPS_ID,MPCSXFER_IPS_EVENTNO,(int)1234);
-
       // Allocate memory for frame (3 for BGR)
       frame = (unsigned char*) malloc(target_region.width * target_region.height * sizeof(unsigned char) * 3);
       if(frame == NULL) {
@@ -235,13 +227,8 @@ Int Task_execute (Task_TransferInfo * info)
       break;
 
     case 7:
-
-      NOTIFY_notify(ID_GPP,MPCSXFER_IPS_ID,MPCSXFER_IPS_EVENTNO,(Uint32)3333);
-
-
       // Calculate weight
       CalWeight(frame, target_candidate, target_region, result);
-      NOTIFY_notify(ID_GPP,MPCSXFER_IPS_ID,MPCSXFER_IPS_EVENTNO,(Uint32)4444);
 
       // Copy weight to shared buffer
       memcpy(buf, result, target_region.width * target_region.height * sizeof(int));
@@ -251,7 +238,6 @@ Int Task_execute (Task_TransferInfo * info)
       NOTIFY_notify(ID_GPP,MPCSXFER_IPS_ID,MPCSXFER_IPS_EVENTNO,(Uint32)0);
       break;
     }
-
   }	
 
   free(target_candidate);
@@ -320,33 +306,23 @@ void MeanShift_Init() {
 int* CalWeight(unsigned char* frame, int* target_candidate, struct Rect rec, int* data)
 {
     int i;
-    int rows = rec.height;
-    int cols = rec.width;
     int index = 0;
 
-    int curr_pixel;
-    int bin_value;
+    unsigned char curr_pixel;
+    unsigned char bin_value;
 
-    // Memory problem, should be checked outside?
-    if (data == NULL) {
-      return NULL;
-    }
-
-    for(i = 0; i < rows * cols; i++) {
+    for(i = 0; i < rec.height * rec.width; i++) {
         // First
-        //curr_pixel  = bgr_planes[0][i];
         curr_pixel  = frame[index++];
         bin_value   = curr_pixel/bin_width;
         data[i]     = target_candidate[bin_value];
 
         // Second
-        //curr_pixel  = bgr_planes[1][i];
         curr_pixel  = frame[index++];
         bin_value   = curr_pixel/bin_width;
         data[i]     = MUL( data[i], target_candidate[16 + bin_value] );
 
         // Third
-        //curr_pixel  = bgr_planes[2][i];
         curr_pixel  = frame[index++];
         bin_value   = curr_pixel/bin_width;
         data[i]     = MUL( data[i], target_candidate[2*16 + bin_value]);
