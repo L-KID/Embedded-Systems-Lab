@@ -52,20 +52,11 @@ cv::Mat MeanShift::pdf_representation(const cv::Mat &frame, const cv::Rect &rect
 
     cv::Mat pdf_model(8,16,CV_32F,cv::Scalar(1e-10));
 
-//    cv::Vec3f curr_pixel_value;
-  //  cv::Vec3f bin_value;
-
     cv::Vec3f curr_pixel_value_A, curr_pixel_value_B, curr_pixel_value_C, curr_pixel_value_D;
     cv::Vec3f bin_value_A, bin_value_B, bin_value_C, bin_value_D;
 
     int row_index = rect.y;
     int col_index = rect.x;
-
-    //float32_t cp_value[4] = {0};
-    //float32_t temp_model[4] = {0};
-    //float32_t divbybinw = {1.0/bin_width};
-    //float32x4_t neon_cp_value, neon_b_value, neon_divbybinw, neon_constant, neon_model;
-    //neon_divbybinw = vmovq_n_f32(divbybinw);
 
     float32_t cp_value[12];
     float32_t temp_model[12];
@@ -154,32 +145,6 @@ cv::Mat MeanShift::pdf_representation(const cv::Mat &frame, const cv::Rect &rect
             pdf_model.at<float>(2,bin_value_D[2]) = vgetq_lane_f32(neon_model_C, 3);
 
             col_index+=4;
-            
-            /*curr_pixel_value = frame.at<cv::Vec3b>(row_index,col_index);
-            
-            cp_value[0] = curr_pixel_value[0];
-            cp_value[1] = curr_pixel_value[1];
-            cp_value[2] = curr_pixel_value[2];
-            neon_cp_value = vld1q_f32(&cp_value[0]);
-
-            neon_b_value = vmulq_f32(neon_cp_value, neon_divbybinw);
-            bin_value[0] = vgetq_lane_f32(neon_b_value, 0);
-            bin_value[1] = vgetq_lane_f32(neon_b_value, 1);
-            bin_value[2] = vgetq_lane_f32(neon_b_value, 2);
-
-            float32_t constant = kernel.at<float>(i,j)*normalized_C;
-            neon_constant = vmovq_n_f32(constant);
-            temp_model[0] = pdf_model.at<float>(0,bin_value[0]);
-            temp_model[1] = pdf_model.at<float>(1,bin_value[1]);
-            temp_model[2] = pdf_model.at<float>(2,bin_value[2]);
-            neon_model = vld1q_f32(&temp_model[0]);
-
-            neon_model = vaddq_f32(neon_model, neon_constant);
-            pdf_model.at<float>(0,bin_value[0]) = vgetq_lane_f32(neon_model, 0);
-            pdf_model.at<float>(1,bin_value[1]) = vgetq_lane_f32(neon_model, 1);
-            pdf_model.at<float>(2,bin_value[2]) = vgetq_lane_f32(neon_model, 2);
-
-            col_index++;*/
         }
         row_index++;
     }

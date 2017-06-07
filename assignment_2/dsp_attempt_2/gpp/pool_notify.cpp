@@ -413,6 +413,7 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
   Timer weightTimer("Read Weight");
   Timer bgrTimer("BGR");
   Timer pdfTimer("PDF");
+  Timer trackTimer("Track");
 
   // Initialize before tracking
   cv::VideoCapture frame_capture = cv::VideoCapture( "car.avi" );
@@ -581,6 +582,8 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
         }
         weightTimer.Pause();
 
+        trackTimer.Start();
+
         float delta_x = 0.0;
         float sum_wij = 0.0;
         float delta_y = 0.0;
@@ -607,6 +610,8 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
 
         next_rect.x += static_cast<int>((delta_x/sum_wij)*centre);
         next_rect.y += static_cast<int>((delta_y/sum_wij)*centre);
+
+        trackTimer.Pause();
 
         if(abs(next_rect.x-ms.target_Region.x)<1 && abs(next_rect.y-ms.target_Region.y)<1)
         {
@@ -642,6 +647,7 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
   pdfTimer.Print();
   divideSqrtTimer.Print();
   notificationTimer.Print();
+  trackTimer.Print();
 
   delete[] dspWeight;
 
