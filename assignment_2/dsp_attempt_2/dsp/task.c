@@ -40,7 +40,7 @@ struct config {
 } cfg;
 
 void MeanShift_Init();
-int* CalWeight(unsigned char* bgr_planes[3], int* target_candidate, struct Rect rec, int* data);
+int* CalWeight(unsigned char* frame, int* target_candidate, struct Rect rec, int* data);
 
 /* Conversion between floating point and fixed point */
 const int scale = 16; // 1/2^16
@@ -176,7 +176,7 @@ Int Task_execute (Task_TransferInfo * info)
   int* result;
 
   // This one holds the blue, green and red frames, respectively
-  unsigned char* bgr_planes[3];
+  unsigned char* frame;
 
   MeanShift_Init();
 
@@ -208,20 +208,9 @@ Int Task_execute (Task_TransferInfo * info)
       // Debug
       NOTIFY_notify(ID_GPP,MPCSXFER_IPS_ID,MPCSXFER_IPS_EVENTNO,(int)1234);
 
-
-      // Allocate memory for bgr planes
-      bgr_planes[0] = (unsigned char*)malloc(target_region.width * target_region.height * sizeof(unsigned char));
-      if(bgr_planes[0] == NULL) {
-        NOTIFY_notify(ID_GPP,MPCSXFER_IPS_ID,MPCSXFER_IPS_EVENTNO,(Uint32)666);
-      }
-
-      bgr_planes[1] = (unsigned char*)malloc(target_region.width * target_region.height * sizeof(unsigned char));
-      if(bgr_planes[1] == NULL) {
-        NOTIFY_notify(ID_GPP,MPCSXFER_IPS_ID,MPCSXFER_IPS_EVENTNO,(Uint32)666);
-      }
-
-      bgr_planes[2] = (unsigned char*)malloc(target_region.width * target_region.height * sizeof(unsigned char));
-      if(bgr_planes[2] == NULL) {
+      // Allocate memory for frame (3 for BGR)
+      frame = (unsigned char*) malloc(target_region.width * target_region.height * sizeof(unsigned char) * 3);
+      if(frame == NULL) {
         NOTIFY_notify(ID_GPP,MPCSXFER_IPS_ID,MPCSXFER_IPS_EVENTNO,(Uint32)666);
       }
 
@@ -238,17 +227,21 @@ Int Task_execute (Task_TransferInfo * info)
       // Store all ROI and target_candidate
       BCACHE_inv ((Ptr)buf, length, TRUE);
 
-      memcpy(bgr_planes[0], buf, target_region.width * target_region.height * sizeof(unsigned char));
-      memcpy(bgr_planes[1], &buf[target_region.width * target_region.height * sizeof(unsigned char)], target_region.width * target_region.height * sizeof(unsigned char));
-      memcpy(bgr_planes[2], &buf[2 * target_region.width * target_region.height * sizeof(unsigned char)], target_region.width * target_region.height * sizeof(unsigned char));
+      // New: store frame and target_candidate ! change name
+      memcpy(frame, buf, target_region.width * target_region.height * sizeof(unsigned char) * 3);
       memcpy(target_candidate, &buf[3 * target_region.width * target_region.height * sizeof(unsigned char)], 48 * sizeof(int));
 
       NOTIFY_notify(ID_GPP,MPCSXFER_IPS_ID,MPCSXFER_IPS_EVENTNO,(Uint32)0);
       break;
 
     case 7:
+
+      NOTIFY_notify(ID_GPP,MPCSXFER_IPS_ID,MPCSXFER_IPS_EVENTNO,(Uint32)3333);
+
+
       // Calculate weight
-      CalWeight(bgr_planes, target_candidate, target_region, result);
+      CalWeight(frame, target_candidate, target_region, result);
+      NOTIFY_notify(ID_GPP,MPCSXFER_IPS_ID,MPCSXFER_IPS_EVENTNO,(Uint32)4444);
 
       // Copy weight to shared buffer
       memcpy(buf, result, target_region.width * target_region.height * sizeof(int));
@@ -263,10 +256,7 @@ Int Task_execute (Task_TransferInfo * info)
 
   free(target_candidate);
   free(result);
-
-  for(i = 0; i < 3; i++) {
-    free(bgr_planes[i]);
-  }
+  free(frame);
 
   return SYS_OK;
 }
@@ -327,11 +317,12 @@ void MeanShift_Init() {
     bin_width = cfg.pixel_range / cfg.num_bins;
 }
 
-int* CalWeight(unsigned char* bgr_planes[3], int* target_candidate, struct Rect rec, int* data)
+int* CalWeight(unsigned char* frame, int* target_candidate, struct Rect rec, int* data)
 {
     int i;
     int rows = rec.height;
     int cols = rec.width;
+    int index = 0;
 
     int curr_pixel;
     int bin_value;
@@ -343,17 +334,20 @@ int* CalWeight(unsigned char* bgr_planes[3], int* target_candidate, struct Rect 
 
     for(i = 0; i < rows * cols; i++) {
         // First
-        curr_pixel  = bgr_planes[0][i];
+        //curr_pixel  = bgr_planes[0][i];
+        curr_pixel  = frame[index++];
         bin_value   = curr_pixel/bin_width;
         data[i]     = target_candidate[bin_value];
 
         // Second
-        curr_pixel  = bgr_planes[1][i];
+        //curr_pixel  = bgr_planes[1][i];
+        curr_pixel  = frame[index++];
         bin_value   = curr_pixel/bin_width;
         data[i]     = MUL( data[i], target_candidate[16 + bin_value] );
 
         // Third
-        curr_pixel  = bgr_planes[2][i];
+        //curr_pixel  = bgr_planes[2][i];
+        curr_pixel  = frame[index++];
         bin_value   = curr_pixel/bin_width;
         data[i]     = MUL( data[i], target_candidate[2*16 + bin_value]);
     }

@@ -409,7 +409,6 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
   Timer kernelTimer("Kernel");
   Timer calweightTimer("CalWeight");
   Timer notificationTimer("Notification");
-  Timer splitTimer("Split");
   Timer divideSqrtTimer("Divide+Sqrt");
   Timer weightTimer("Read Weight");
   Timer bgrTimer("BGR");
@@ -481,18 +480,6 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
 
       kernelTimer.Start();
 
-      // Split frame into BGR
-      splitTimer.Start();
-      std::vector<cv::Mat> bgr_planes;
-      cv::split(frame, bgr_planes);
-      splitTimer.Pause();
-
-      /*
-      printf(" %d %d \n", bgr_planes[0].at<unsigned char>(0,0), frame.data[0]);
-      printf(" %d %d \n", bgr_planes[1].at<unsigned char>(0,0), frame.data[1]);
-      printf(" %d %d \n", bgr_planes[2].at<unsigned char>(0,0), frame.data[2]);
-      */
-
       // track object
       #ifndef ARMCC
       // MCPROF_START();
@@ -512,16 +499,15 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
         // Send ROI of BGR matrices and target_candidate to DSP
         
         bgrTimer.Start();
-        // Put all data in buffer at once
-        cv::Mat roi = bgr_planes[0](ms.target_Region).clone();
-        int roi_size = roi.rows * roi.cols * sizeof(unsigned char);
+        // New without split
+        // Get ROI of frame (all colours)
+        cv::Mat roi = frame(ms.target_Region).clone();
+
+        // Put ROI in shared buffer
+        // Check for continuous!!
+        int roi_size = roi.rows * roi.cols * sizeof(unsigned char) * 3;
         memcpy(pool_notify_DataBuf, roi.data, roi_size);
 
-        roi = bgr_planes[1](ms.target_Region).clone();
-        memcpy(&pool_notify_DataBuf[roi_size], roi.data, roi_size);
-
-        roi = bgr_planes[2](ms.target_Region).clone();
-        memcpy(&pool_notify_DataBuf[2 * roi_size], roi.data, roi_size);
         bgrTimer.Pause();
 
         // New: float to fix on GPP:
@@ -540,7 +526,7 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
         }
         divideSqrtTimer.Pause();
 
-        memcpy(&pool_notify_DataBuf[3 * roi_size], fixed, 48 * sizeof(int));
+        memcpy(&pool_notify_DataBuf[roi_size], fixed, 48 * sizeof(int));
 
         POOL_writeback (POOL_makePoolId(processorId, SAMPLE_POOL_ID),
                   pool_notify_DataBuf,
@@ -652,7 +638,6 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
   kernelTimer.Print();
   calweightTimer.Print();
   bgrTimer.Print();
-  splitTimer.Print();
   weightTimer.Print();
   pdfTimer.Print();
   divideSqrtTimer.Print();
