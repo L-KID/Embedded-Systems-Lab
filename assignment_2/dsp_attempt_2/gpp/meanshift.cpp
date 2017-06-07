@@ -210,7 +210,9 @@ cv::Mat MeanShift::CalWeight(const cv::Mat &frame, cv::Mat &target_model,
             {
                 int curr_pixel = (bgr_planes[k].at<uchar>(row_index,col_index));
                 int bin_value = curr_pixel/bin_width;
-                weight.at<float>(i,j) *= static_cast<float>((sqrt(target_model.at<float>(k, bin_value)/target_candidate.at<float>(k, bin_value))));
+                float temp = static_cast<float>((sqrt(target_model.at<float>(k, bin_value)/target_candidate.at<float>(k, bin_value))));
+                printf(" %f ", temp);
+                weight.at<float>(i,j) *= temp;
                 col_index++;
             }
             row_index++;

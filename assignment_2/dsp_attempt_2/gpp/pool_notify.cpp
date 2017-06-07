@@ -437,7 +437,6 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
   // Wait for DSP to be ready for command
   sem_wait(&sem);
 
-  totalTimer.Start();
 
   // Newest attempt (this one works).
   // Send target_Region size and target_model to DSP
@@ -504,6 +503,7 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
       // Track function from MS class
       cv::Rect next_rect;
 
+
       for(int iter=0;iter<ms.cfg.MaxIter;iter++)
       {
         cv::Mat target_candidate = ms.pdf_representation(frame, ms.target_Region);
@@ -525,17 +525,18 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
         // New: float to fix on GPP:
         // This can be done more efficient with pointers instead of .at and single loop :)
         // Also, we only need first three rows, as only those are used!
-        int fixed[128];
-        for(int r = 0; r < target_candidate.rows; r++) {
+       
+        // This works:
+        
+        int fixed[48];
+        for(int r = 0; r < 3; r++) {
           for(int c = 0; c < target_candidate.cols; c++) {
-            fixed[r*target_candidate.cols + c] = FloatToFixed(target_candidate.at<float>(r,c));
+            float temp = static_cast<float>((sqrt(ms.target_model.at<float>(r, c)/target_candidate.at<float>(r, c))));
+              fixed[r*target_candidate.cols + c] = FloatToFixed(temp/1000);
           }
         }
-
-        memcpy(&pool_notify_DataBuf[3 * roi_size], fixed, 128 * sizeof(int));
-
-        // Old:
-        //memcpy(&pool_notify_DataBuf[3 * roi_size], target_candidate.data, target_candidate.rows * target_candidate.cols * sizeof(float));
+        
+        memcpy(&pool_notify_DataBuf[3 * roi_size], fixed, 48 * sizeof(int));
 
         POOL_writeback (POOL_makePoolId(processorId, SAMPLE_POOL_ID),
                   pool_notify_DataBuf,
@@ -581,7 +582,7 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
         int* int_buf = (int*)pool_notify_DataBuf;
         for(int r = 0; r < ms.target_Region.height; r++) {
           for(int c = 0; c < ms.target_Region.width; c++) {
-            dspWeight[r*ms.target_Region.width + c] = FixedToFloat(int_buf[r*ms.target_Region.width + c]);
+            dspWeight[r*ms.target_Region.width + c] = FixedToFloat(int_buf[r*ms.target_Region.width + c]*1000);
           }
         }
 
@@ -595,6 +596,8 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
         next_rect.y = ms.target_Region.y;
         next_rect.width = ms.target_Region.width;
         next_rect.height = ms.target_Region.height;
+
+      totalTimer.Start();
 
         for(int i=0;i<weight.rows;i++)
         {
@@ -611,6 +614,8 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
 
         next_rect.x += static_cast<int>((delta_x/sum_wij)*centre);
         next_rect.y += static_cast<int>((delta_y/sum_wij)*centre);
+
+      totalTimer.Pause();
 
         if(abs(next_rect.x-ms.target_Region.x)<1 && abs(next_rect.y-ms.target_Region.y)<1)
         {
@@ -633,8 +638,6 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
       // write the frame
       writer << frame;
   }
-
-  totalTimer.Pause();
 
   totalTimer.Print();
 

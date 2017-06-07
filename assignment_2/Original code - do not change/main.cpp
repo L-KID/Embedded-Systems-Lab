@@ -34,7 +34,7 @@ int main(int argc, char ** argv)
     int codec = CV_FOURCC('F', 'L', 'V', '1');
     cv::VideoWriter writer("tracking_result.avi", codec, 20, cv::Size(frame.cols,frame.rows));
 
-    totalTimer.Start();
+    //totalTimer.Start();
     #ifndef ARMCC
     MCPROF_START();
     #endif
@@ -50,7 +50,9 @@ int main(int argc, char ** argv)
         #ifndef ARMCC
         // MCPROF_START();
         #endif
+        totalTimer.Start();
         cv::Rect ms_rect =  ms.track(frame);
+        totalTimer.Pause();
         #ifndef ARMCC
         // MCPROF_STOP();
         #endif
@@ -64,7 +66,7 @@ int main(int argc, char ** argv)
     #ifndef ARMCC
     MCPROF_STOP();
     #endif
-    totalTimer.Pause();
+    //totalTimer.Pause();
 
     totalTimer.Print();
 

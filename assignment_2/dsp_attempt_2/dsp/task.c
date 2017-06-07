@@ -190,7 +190,7 @@ Int Task_execute (Task_TransferInfo * info)
   MeanShift_Init();
 
   target_model      = (int*) malloc(128*sizeof(int));         // These are fixed size by PDF representation
-  target_candidate  = (int*) malloc(128 * sizeof(int));       
+  target_candidate  = (int*) malloc(48 * sizeof(int));       
 
   // Cannot run if memory is not successfully allocated
   if (target_model == NULL || target_candidate == NULL) { 
@@ -252,7 +252,7 @@ Int Task_execute (Task_TransferInfo * info)
       memcpy(bgr_planes[0], buf, target_region.width * target_region.height * sizeof(unsigned char));
       memcpy(bgr_planes[1], &buf[target_region.width * target_region.height * sizeof(unsigned char)], target_region.width * target_region.height * sizeof(unsigned char));
       memcpy(bgr_planes[2], &buf[2 * target_region.width * target_region.height * sizeof(unsigned char)], target_region.width * target_region.height * sizeof(unsigned char));
-      memcpy(target_candidate, &buf[3 * target_region.width * target_region.height * sizeof(unsigned char)], 128 * sizeof(int));
+      memcpy(target_candidate, &buf[3 * target_region.width * target_region.height * sizeof(unsigned char)], 48 * sizeof(int));
 
       NOTIFY_notify(ID_GPP,MPCSXFER_IPS_ID,MPCSXFER_IPS_EVENTNO,(Uint32)0);
       break;
@@ -390,29 +390,33 @@ int* CalWeight(unsigned char* bgr_planes[3], int* target_model,
         // First
         curr_pixel  = bgr_planes[0][i];
         bin_value   = curr_pixel/bin_width;
-        tm_fixed    = target_model[bin_value];
-        tc_fixed    = target_candidate[bin_value] + 1;
+        //tm_fixed    = target_model[bin_value];
+        //tc_fixed    = target_candidate[bin_value] + 1;
 
-        weight      = DIV(tm_fixed, tc_fixed);
-        data[i]     = SquareRootRounded(weight);
+        //weight      = DIV(tm_fixed, tc_fixed);
+        //data[i]     = SquareRootRounded(weight);
+        data[i]     = target_candidate[bin_value];
 
         // Second
         curr_pixel  = bgr_planes[1][i];
         bin_value   = curr_pixel/bin_width;
-        tm_fixed    = target_model[16 + bin_value];
-        tc_fixed    = target_candidate[16 + bin_value] + 1;
+        //tm_fixed    = target_model[16 + bin_value];
+        //tc_fixed    = target_candidate[16 + bin_value] + 1;
 
-        weight      = DIV(tm_fixed, tc_fixed);
-        data[i]     = MUL( data[i], SquareRootRounded(weight) );
+        //weight      = DIV(tm_fixed, tc_fixed);
+//        data[i]     = MUL( data[i], SquareRootRounded(weight) );
+        data[i]     = MUL( data[i], target_candidate[16 + bin_value] );
+
 
         // Third
         curr_pixel  = bgr_planes[2][i];
         bin_value   = curr_pixel/bin_width;
-        tm_fixed    = target_model[2*16 + bin_value];
-        tc_fixed    = target_candidate[2*16 + bin_value] + 1;
+        //tm_fixed    = target_model[2*16 + bin_value];
+        //tc_fixed    = target_candidate[2*16 + bin_value] + 1;
 
-        weight      = DIV(tm_fixed, tc_fixed);
-        data[i]     = MUL( data[i], SquareRootRounded(weight) );
+        //weight      = DIV(tm_fixed, tc_fixed);
+        data[i]     = MUL( data[i], target_candidate[2*16 + bin_value]);
+//        data[i]     = MUL( data[i], SquareRootRounded(weight) );
     }
 
       //} 
