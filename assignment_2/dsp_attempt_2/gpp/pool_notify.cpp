@@ -409,6 +409,11 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
   Timer kernelTimer("Kernel");
   Timer calweightTimer("CalWeight");
   Timer notificationTimer("Notification");
+  Timer splitTimer("Split");
+  Timer divideSqrtTimer("Divide+Sqrt");
+  Timer weightTimer("Read Weight");
+  Timer bgrTimer("BGR");
+  Timer pdfTimer("PDF");
 
   // Initialize before tracking
   cv::VideoCapture frame_capture = cv::VideoCapture( "car.avi" );
@@ -447,7 +452,10 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
                        (Void *) pool_notify_DataBuf,
                        AddrType_Usr) ;
 
+  notificationTimer.Start();
   status = NOTIFY_notify (processorId, pool_notify_IPS_ID, pool_notify_IPS_EVENTNO, (Uint32)1);
+  notificationTimer.Pause();
+
   if (DSP_FAILED (status)) 
   {
       printf ("NOTIFY_notify () DataBuf failed."
@@ -474,8 +482,16 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
       kernelTimer.Start();
 
       // Split frame into BGR
+      splitTimer.Start();
       std::vector<cv::Mat> bgr_planes;
       cv::split(frame, bgr_planes);
+      splitTimer.Pause();
+
+      /*
+      printf(" %d %d \n", bgr_planes[0].at<unsigned char>(0,0), frame.data[0]);
+      printf(" %d %d \n", bgr_planes[1].at<unsigned char>(0,0), frame.data[1]);
+      printf(" %d %d \n", bgr_planes[2].at<unsigned char>(0,0), frame.data[2]);
+      */
 
       // track object
       #ifndef ARMCC
@@ -488,11 +504,14 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
 
       for(int iter=0;iter<ms.cfg.MaxIter;iter++)
       {
+        pdfTimer.Start();
         cv::Mat target_candidate = ms.pdf_representation(frame, ms.target_Region);
+        pdfTimer.Pause();
 
         // Calculate weight on DSP
         // Send ROI of BGR matrices and target_candidate to DSP
         
+        bgrTimer.Start();
         // Put all data in buffer at once
         cv::Mat roi = bgr_planes[0](ms.target_Region).clone();
         int roi_size = roi.rows * roi.cols * sizeof(unsigned char);
@@ -503,6 +522,7 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
 
         roi = bgr_planes[2](ms.target_Region).clone();
         memcpy(&pool_notify_DataBuf[2 * roi_size], roi.data, roi_size);
+        bgrTimer.Pause();
 
         // New: float to fix on GPP:
         // This can be done more efficient with pointers instead of .at and single loop :)
@@ -510,6 +530,7 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
        
         // This works:
         
+        divideSqrtTimer.Start();
         int fixed[48];
         for(int r = 0; r < 3; r++) {
           for(int c = 0; c < target_candidate.cols; c++) {
@@ -517,7 +538,8 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
               fixed[r*target_candidate.cols + c] = FloatToFixed(temp/1000);
           }
         }
-        
+        divideSqrtTimer.Pause();
+
         memcpy(&pool_notify_DataBuf[3 * roi_size], fixed, 48 * sizeof(int));
 
         POOL_writeback (POOL_makePoolId(processorId, SAMPLE_POOL_ID),
@@ -562,8 +584,8 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
                                         pool_notify_DataBuf,
                                         pool_notify_BufferSize);
 
-  notificationTimer.Start();
 
+        weightTimer.Start();
         // We should probably speed up this in some way!
         int* int_buf = (int*)pool_notify_DataBuf;
         for(int r = 0; r < ms.target_Region.height; r++) {
@@ -571,7 +593,7 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
             dspWeight[r*ms.target_Region.width + c] = FixedToFloat(int_buf[r*ms.target_Region.width + c]*1000);
           }
         }
-  notificationTimer.Stop();
+        weightTimer.Pause();
 
         float delta_x = 0.0;
         float sum_wij = 0.0;
@@ -629,6 +651,11 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
   totalTimer.Print();
   kernelTimer.Print();
   calweightTimer.Print();
+  bgrTimer.Print();
+  splitTimer.Print();
+  weightTimer.Print();
+  pdfTimer.Print();
+  divideSqrtTimer.Print();
   notificationTimer.Print();
 
   delete[] dspWeight;
