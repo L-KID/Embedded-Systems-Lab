@@ -357,10 +357,11 @@ int* CalWeight(unsigned char* bgr_planes[3], int* target_model,
     }
 
     // Double loop fixed point
-    for(i = 0; i < rows; i++) {
-      for(j = 0; j < cols; j++) {
-        // First
-        curr_pixel  = bgr_planes[0][i*cols + j];
+    //for(i = 0; i < rows; i++) {
+      //for(j = 0; j < cols; j++) {
+
+    // First
+/*        curr_pixel  = bgr_planes[0][i*cols + j];
         bin_value   = curr_pixel/bin_width;
         tm_fixed    = target_model[bin_value];
         tc_fixed    = target_candidate[bin_value] + 1;
@@ -384,9 +385,38 @@ int* CalWeight(unsigned char* bgr_planes[3], int* target_model,
         tc_fixed    = target_candidate[2*16 + bin_value] + 1;
 
         weight            = DIV(tm_fixed, tc_fixed);
-        data[i*cols + j]  = MUL( data[i*cols + j], SquareRootRounded(weight) );
-      } 
+        data[i*cols + j]  = MUL( data[i*cols + j], SquareRootRounded(weight) );*/
+    for(i = 0; i < rows * cols; i++) {
+        // First
+        curr_pixel  = bgr_planes[0][i];
+        bin_value   = curr_pixel/bin_width;
+        tm_fixed    = target_model[bin_value];
+        tc_fixed    = target_candidate[bin_value] + 1;
+
+        weight      = DIV(tm_fixed, tc_fixed);
+        data[i]     = SquareRootRounded(weight);
+
+        // Second
+        curr_pixel  = bgr_planes[1][i];
+        bin_value   = curr_pixel/bin_width;
+        tm_fixed    = target_model[16 + bin_value];
+        tc_fixed    = target_candidate[16 + bin_value] + 1;
+
+        weight      = DIV(tm_fixed, tc_fixed);
+        data[i]     = MUL( data[i], SquareRootRounded(weight) );
+
+        // Third
+        curr_pixel  = bgr_planes[2][i];
+        bin_value   = curr_pixel/bin_width;
+        tm_fixed    = target_model[2*16 + bin_value];
+        tc_fixed    = target_candidate[2*16 + bin_value] + 1;
+
+        weight      = DIV(tm_fixed, tc_fixed);
+        data[i]     = MUL( data[i], SquareRootRounded(weight) );
     }
+
+      //} 
+    //}
 
     return data;
 }
