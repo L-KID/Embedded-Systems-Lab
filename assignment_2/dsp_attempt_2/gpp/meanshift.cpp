@@ -45,8 +45,11 @@ cv::Mat MeanShift::pdf_representation(const cv::Mat &frame, const cv::Rect &rect
     static int k = 0;
 
     cv::Mat kernel(rect.height,rect.width,CV_32F,cv::Scalar(0));
+    float32x4_t neon_constant;
     if(k == 0) {
-        normalized_C = 1.0 / Epanechnikov_kernel(kernel);
+        float32_t normalized_C = 1.0 / Epanechnikov_kernel(kernel);
+        float32_t constant = kernel.at<float>(i,j)*normalized_C;
+        neon_constant = vmovq_n_f32(constant);
         k++;
     }
 
@@ -64,7 +67,7 @@ cv::Mat MeanShift::pdf_representation(const cv::Mat &frame, const cv::Rect &rect
     float32x4_t neon_cp_value_A, neon_cp_value_B, neon_cp_value_C;
     float32x4_t neon_b_value_A, neon_b_value_B, neon_b_value_C;
     float32x4_t neon_model_A, neon_model_B, neon_model_C;
-    float32x4_t neon_divbybinw, neon_constant;
+    float32x4_t neon_divbybinw;
     neon_divbybinw = vmovq_n_f32(divbybinw);
 
     for(int i=0;i<rect.height;i++)
@@ -72,6 +75,7 @@ cv::Mat MeanShift::pdf_representation(const cv::Mat &frame, const cv::Rect &rect
         col_index = rect.x;
         for(int j=0;j<rect.width/4;j++)
         {
+
             curr_pixel_value_A = frame.at<cv::Vec3b>(row_index,col_index);
             curr_pixel_value_B = frame.at<cv::Vec3b>(row_index,col_index+1);
             curr_pixel_value_C = frame.at<cv::Vec3b>(row_index,col_index+2);
@@ -109,8 +113,6 @@ cv::Mat MeanShift::pdf_representation(const cv::Mat &frame, const cv::Rect &rect
             bin_value_D[1] = vgetq_lane_f32(neon_b_value_C, 2);
             bin_value_D[2] = vgetq_lane_f32(neon_b_value_C, 3);
 
-            float32_t constant = kernel.at<float>(i,j)*normalized_C;
-            neon_constant = vmovq_n_f32(constant);
             temp_model[0] = pdf_model.at<float>(0,bin_value_A[0]);
             temp_model[1] = pdf_model.at<float>(1,bin_value_A[1]);
             temp_model[2] = pdf_model.at<float>(2,bin_value_A[2]);
@@ -148,7 +150,7 @@ cv::Mat MeanShift::pdf_representation(const cv::Mat &frame, const cv::Rect &rect
         row_index++;
     }
 
-    return pdf_model;
+return pdf_model;
 
 }
 
