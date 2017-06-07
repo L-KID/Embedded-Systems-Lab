@@ -26,15 +26,6 @@
 /* ------------------------------------ OpenCV Headers                  */
 #include "meanshift.h"
 
-/* ------------------------------------ Custom defines                  */
-#define MSG_TARGET_REGION     10
-#define MSG_TARGET_MODEL      11
-#define MSG_BLUE_FRAME        12
-#define MSG_GREEN_FRAME       13
-#define MSG_RED_FRAME         14
-#define MSG_TARGET_CANDIDATE  15
-#define MSG_TRACK             16
-
 /*------------------------------------- Fixed/Floating point conversion */
 const int scale = 16; // 1/2^16
 #define FloatToFixed(x) (x* (float)(1<<scale))
@@ -405,8 +396,6 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
 {
   DSP_STATUS  status    = DSP_SOK ;
 
-  long long start;
-
 	#if defined(DSP)
     unsigned char *buf_dsp;
 	#endif
@@ -417,6 +406,9 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
 
   //start = get_usec();
   Timer totalTimer("Total Time");
+  Timer kernelTimer("Kernel");
+  Timer calweightTimer("CalWeight");
+  Timer notificationTimer("Notification");
 
   // Initialize before tracking
   cv::VideoCapture frame_capture = cv::VideoCapture( "car.avi" );
@@ -437,25 +429,13 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
   // Wait for DSP to be ready for command
   sem_wait(&sem);
 
+  totalTimer.Start();
 
   // Newest attempt (this one works).
-  // Send target_Region size and target_model to DSP
-
+  // Send target_Region size to DSP
   memcpy(&pool_notify_DataBuf[0], &rect.width, sizeof(int));
   memcpy(&pool_notify_DataBuf[0 + sizeof(int)], &rect.height, sizeof(int));
-  
-  // Old
-  //memcpy(&pool_notify_DataBuf[0 + 2*sizeof(int)], ms.target_model.data, ms.target_model.rows*ms.target_model.cols*sizeof(float));
 
-  // New: convert to fixed point on GPP!
-  // This can be done more efficiently with a single loop and pointers :)
-  int fixed[128];
-  for(int r = 0; r < ms.target_model.rows; r++) {
-    for(int c = 0; c < ms.target_model.cols; c++) {
-      fixed[r*ms.target_model.cols + c] = FloatToFixed(ms.target_model.at<float>(r,c));
-    }
-  }
-  memcpy(&pool_notify_DataBuf[0 + 2*sizeof(int)], fixed, 128 * sizeof(int));
 
   POOL_writeback (POOL_makePoolId(processorId, SAMPLE_POOL_ID),
                     pool_notify_DataBuf,
@@ -475,7 +455,7 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
                (int)status) ;
   }
 
-  // Wait for DSP to save target_Region size and target_model
+  // Wait for DSP to save target_Region size
   sem_wait(&sem);
 
   // Allocate only once
@@ -490,6 +470,8 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
       // Read a frame
       int status = frame_capture.read(frame);
       if( 0 == status ) break;
+
+      kernelTimer.Start();
 
       // Split frame into BGR
       std::vector<cv::Mat> bgr_planes;
@@ -560,6 +542,8 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
         // Wait for DSP
         sem_wait(&sem);
 
+        calweightTimer.Start();
+
         // Tell DSP to execute
         status = NOTIFY_notify (processorId, pool_notify_IPS_ID, pool_notify_IPS_EVENTNO, (Uint32)(7));
         if (DSP_FAILED (status)) 
@@ -572,11 +556,13 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
         // Wait for execution
         sem_wait(&sem);
 
+        calweightTimer.Pause();
+
         POOL_invalidate (POOL_makePoolId(processorId, SAMPLE_POOL_ID),
                                         pool_notify_DataBuf,
                                         pool_notify_BufferSize);
 
-        //memcpy(dspWeight, pool_notify_DataBuf, ms.target_Region.width * ms.target_Region.height * sizeof(float));
+  notificationTimer.Start();
 
         // We should probably speed up this in some way!
         int* int_buf = (int*)pool_notify_DataBuf;
@@ -585,6 +571,7 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
             dspWeight[r*ms.target_Region.width + c] = FixedToFloat(int_buf[r*ms.target_Region.width + c]*1000);
           }
         }
+  notificationTimer.Stop();
 
         float delta_x = 0.0;
         float sum_wij = 0.0;
@@ -596,8 +583,6 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
         next_rect.y = ms.target_Region.y;
         next_rect.width = ms.target_Region.width;
         next_rect.height = ms.target_Region.height;
-
-      totalTimer.Start();
 
         for(int i=0;i<weight.rows;i++)
         {
@@ -615,8 +600,6 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
         next_rect.x += static_cast<int>((delta_x/sum_wij)*centre);
         next_rect.y += static_cast<int>((delta_y/sum_wij)*centre);
 
-      totalTimer.Pause();
-
         if(abs(next_rect.x-ms.target_Region.x)<1 && abs(next_rect.y-ms.target_Region.y)<1)
         {
             break;
@@ -627,6 +610,8 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
             ms.target_Region.y = next_rect.y;
         }
       }      
+
+      kernelTimer.Pause();
 
       #ifndef ARMCC
       // MCPROF_STOP();
@@ -639,14 +624,14 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
       writer << frame;
   }
 
+  totalTimer.Pause();
+
   totalTimer.Print();
+  kernelTimer.Print();
+  calweightTimer.Print();
+  notificationTimer.Print();
 
   delete[] dspWeight;
-
-  //printf("Sum execution time %lld us.\n", get_usec()-start);
-
-  //std::cout << "Processed " << fcount << " frames" << std::endl;
-  //std::cout << "Time: " << totalTimer.GetTime() <<" sec\nFPS : " << fcount/totalTimer.GetTime() << std::endl;
 
   return status ;
 }
