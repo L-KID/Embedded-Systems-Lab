@@ -52,24 +52,110 @@ cv::Mat MeanShift::pdf_representation(const cv::Mat &frame, const cv::Rect &rect
 
     cv::Mat pdf_model(8,16,CV_32F,cv::Scalar(1e-10));
 
-    cv::Vec3f curr_pixel_value;
-    cv::Vec3f bin_value;
+//    cv::Vec3f curr_pixel_value;
+  //  cv::Vec3f bin_value;
+
+    cv::Vec3f curr_pixel_value_A, curr_pixel_value_B, curr_pixel_value_C, curr_pixel_value_D;
+    cv::Vec3f bin_value_A, bin_value_B, bin_value_C, bin_value_D;
 
     int row_index = rect.y;
     int col_index = rect.x;
 
-    float32_t cp_value[4] = {0};
-    float32_t temp_model[4] = {0};
+    //float32_t cp_value[4] = {0};
+    //float32_t temp_model[4] = {0};
+    //float32_t divbybinw = {1.0/bin_width};
+    //float32x4_t neon_cp_value, neon_b_value, neon_divbybinw, neon_constant, neon_model;
+    //neon_divbybinw = vmovq_n_f32(divbybinw);
+
+    float32_t cp_value[12];
+    float32_t temp_model[12];
     float32_t divbybinw = {1.0/bin_width};
-    float32x4_t neon_cp_value, neon_b_value, neon_divbybinw, neon_constant, neon_model;
+    float32x4_t neon_cp_value_A, neon_cp_value_B, neon_cp_value_C;
+    float32x4_t neon_b_value_A, neon_b_value_B, neon_b_value_C;
+    float32x4_t neon_model_A, neon_model_B, neon_model_C;
+    float32x4_t neon_divbybinw, neon_constant;
     neon_divbybinw = vmovq_n_f32(divbybinw);
 
     for(int i=0;i<rect.height;i++)
     {
         col_index = rect.x;
-        for(int j=0;j<rect.width;j++)
+        for(int j=0;j<rect.width/4;j++)
         {
-            curr_pixel_value = frame.at<cv::Vec3b>(row_index,col_index);
+
+            curr_pixel_value_A = frame.at<cv::Vec3b>(row_index,col_index);
+            curr_pixel_value_B = frame.at<cv::Vec3b>(row_index,col_index+1);
+            curr_pixel_value_C = frame.at<cv::Vec3b>(row_index,col_index+2);
+            curr_pixel_value_D = frame.at<cv::Vec3b>(row_index,col_index+3);
+
+            cp_value[0] = curr_pixel_value_A[0];
+            cp_value[1] = curr_pixel_value_A[1];
+            cp_value[2] = curr_pixel_value_A[2];
+            cp_value[3] = curr_pixel_value_B[0];
+            cp_value[4] = curr_pixel_value_B[1];
+            cp_value[5] = curr_pixel_value_B[2];
+            cp_value[6] = curr_pixel_value_C[0];
+            cp_value[7] = curr_pixel_value_C[1];
+            cp_value[8] = curr_pixel_value_C[2];
+            cp_value[9] = curr_pixel_value_D[0];
+            cp_value[10] = curr_pixel_value_D[1];
+            cp_value[11] = curr_pixel_value_D[2];
+            neon_cp_value_A = vld1q_f32(&cp_value[0]);
+            neon_cp_value_B = vld1q_f32(&cp_value[4]);
+            neon_cp_value_C = vld1q_f32(&cp_value[8]);
+
+            neon_b_value_A = vmulq_f32(neon_cp_value_A, neon_divbybinw);
+            neon_b_value_B = vmulq_f32(neon_cp_value_B, neon_divbybinw);
+            neon_b_value_C = vmulq_f32(neon_cp_value_C, neon_divbybinw);
+            bin_value_A[0] = vgetq_lane_f32(neon_b_value_A, 0);
+            bin_value_A[1] = vgetq_lane_f32(neon_b_value_A, 1);
+            bin_value_A[2] = vgetq_lane_f32(neon_b_value_A, 2);
+            bin_value_B[0] = vgetq_lane_f32(neon_b_value_A, 3);
+            bin_value_B[1] = vgetq_lane_f32(neon_b_value_B, 0);
+            bin_value_B[2] = vgetq_lane_f32(neon_b_value_B, 1);
+            bin_value_C[0] = vgetq_lane_f32(neon_b_value_B, 2);
+            bin_value_C[1] = vgetq_lane_f32(neon_b_value_B, 3);
+            bin_value_C[2] = vgetq_lane_f32(neon_b_value_C, 0);
+            bin_value_D[0] = vgetq_lane_f32(neon_b_value_C, 1);
+            bin_value_D[1] = vgetq_lane_f32(neon_b_value_C, 2);
+            bin_value_D[2] = vgetq_lane_f32(neon_b_value_C, 3);
+
+            float32_t constant = kernel.at<float>(i,j)*normalized_C;
+            neon_constant = vmovq_n_f32(constant);
+            temp_model[0] = pdf_model.at<float>(0,bin_value_A[0]);
+            temp_model[1] = pdf_model.at<float>(1,bin_value_A[1]);
+            temp_model[2] = pdf_model.at<float>(2,bin_value_A[2]);
+            temp_model[3] = pdf_model.at<float>(0,bin_value_B[0]);
+            temp_model[4] = pdf_model.at<float>(1,bin_value_B[1]);
+            temp_model[5] = pdf_model.at<float>(2,bin_value_B[2]);
+            temp_model[6] = pdf_model.at<float>(0,bin_value_C[0]);
+            temp_model[7] = pdf_model.at<float>(1,bin_value_C[1]);
+            temp_model[8] = pdf_model.at<float>(2,bin_value_C[2]);
+            temp_model[9] = pdf_model.at<float>(0,bin_value_D[0]);
+            temp_model[10] = pdf_model.at<float>(1,bin_value_D[1]);
+            temp_model[11] = pdf_model.at<float>(2,bin_value_D[2]);
+            neon_model_A = vld1q_f32(&temp_model[0]);
+            neon_model_B = vld1q_f32(&temp_model[4]);
+            neon_model_C = vld1q_f32(&temp_model[8]);
+
+            neon_model_A = vaddq_f32(neon_model_A, neon_constant);
+            neon_model_B = vaddq_f32(neon_model_B, neon_constant);
+            neon_model_C = vaddq_f32(neon_model_C, neon_constant);
+            pdf_model.at<float>(0,bin_value_A[0]) = vgetq_lane_f32(neon_model_A, 0);
+            pdf_model.at<float>(1,bin_value_A[1]) = vgetq_lane_f32(neon_model_A, 1);
+            pdf_model.at<float>(2,bin_value_A[2]) = vgetq_lane_f32(neon_model_A, 2);
+            pdf_model.at<float>(0,bin_value_B[0]) = vgetq_lane_f32(neon_model_A, 3);
+            pdf_model.at<float>(1,bin_value_B[1]) = vgetq_lane_f32(neon_model_B, 0);
+            pdf_model.at<float>(2,bin_value_B[2]) = vgetq_lane_f32(neon_model_B, 1);
+            pdf_model.at<float>(0,bin_value_C[0]) = vgetq_lane_f32(neon_model_B, 2);
+            pdf_model.at<float>(1,bin_value_C[1]) = vgetq_lane_f32(neon_model_B, 3);
+            pdf_model.at<float>(2,bin_value_C[2]) = vgetq_lane_f32(neon_model_C, 0);
+            pdf_model.at<float>(0,bin_value_D[0]) = vgetq_lane_f32(neon_model_C, 1);
+            pdf_model.at<float>(1,bin_value_D[1]) = vgetq_lane_f32(neon_model_C, 2);
+            pdf_model.at<float>(2,bin_value_D[2]) = vgetq_lane_f32(neon_model_C, 3);
+
+            col_index+=4;
+            
+            /*curr_pixel_value = frame.at<cv::Vec3b>(row_index,col_index);
             
             cp_value[0] = curr_pixel_value[0];
             cp_value[1] = curr_pixel_value[1];
@@ -93,7 +179,7 @@ cv::Mat MeanShift::pdf_representation(const cv::Mat &frame, const cv::Rect &rect
             pdf_model.at<float>(1,bin_value[1]) = vgetq_lane_f32(neon_model, 1);
             pdf_model.at<float>(2,bin_value[2]) = vgetq_lane_f32(neon_model, 2);
 
-            col_index++;
+            col_index++;*/
         }
         row_index++;
     }
