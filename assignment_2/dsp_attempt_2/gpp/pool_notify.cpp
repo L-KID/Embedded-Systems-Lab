@@ -27,7 +27,7 @@
 #include "meanshift.h"
 
 /*------------------------------------- Fixed/Floating point conversion */
-const int scale = 16; // 1/2^16
+const int scale = 8; // 1/2^16
 #define FloatToFixed(x) (x* (float)(1<<scale))
 #define FixedToFloat(x) ((float)x/(float)(1<<scale))
 
@@ -410,10 +410,10 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
   Timer calweightTimer("CalWeight");
   Timer notificationTimer("Notification");
   Timer divideSqrtTimer("Divide+Sqrt");
-  Timer weightTimer("Read Weight");
   Timer bgrTimer("BGR");
   Timer pdfTimer("PDF");
   Timer trackTimer("Track");
+  Timer testTimer("Test");
 
   // Initialize before tracking
   cv::VideoCapture frame_capture = cv::VideoCapture( "car.avi" );
@@ -467,13 +467,26 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
   sem_wait(&sem);
 
   // Allocate only once
-  float* dspWeight = new float[ms.target_Region.height * ms.target_Region.width];
-  cv::Mat weight = cv::Mat(ms.target_Region.height, ms.target_Region.width, CV_32F, dspWeight);
+  //cv::Mat weight = cv::Mat(ms.target_Region.height, ms.target_Region.width, CV_32F, dspWeight);
 
 
   // Start tracking
   int TotalFrames = 32;
   int fcount;
+  bool first = true;
+
+  // For tracking, fixed size
+  cv::Rect next_rect; 
+  next_rect.width = ms.target_Region.width;
+  next_rect.height = ms.target_Region.height;
+
+  float centre = static_cast<float>((ms.target_Region.height-1)/2.0);
+
+  // Check allocation!!!
+  float* norms;
+  int norms_length = rect.height > rect.width ? rect.height : rect.width;
+  norms = new float[norms_length];
+
   for(fcount=0; fcount<TotalFrames; ++fcount)
   {
       // Read a frame
@@ -488,30 +501,28 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
       #endif
 
       // Track function from MS class
-      cv::Rect next_rect;
-
-      float centre = static_cast<float>((ms.target_Region.height-1)/2.0);
-
       for(int iter=0;iter<ms.cfg.MaxIter;iter++)
       {
-        pdfTimer.Start();
+        //pdfTimer.Start();
         cv::Mat target_candidate = ms.pdf_representation(frame, ms.target_Region);
-        pdfTimer.Pause();
+        //pdfTimer.Pause();
 
         // Calculate weight on DSP
         // Send ROI of BGR matrices and target_candidate to DSP
         
-        bgrTimer.Start();
+        //bgrTimer.Start();
         // New without split
         // Get ROI of frame (all colours)
         cv::Mat roi = frame(ms.target_Region).clone();
+
+        //cv::Mat target_candidate = ms.pdf_representation(frame, ms.target_Region);
 
         // Put ROI in shared buffer
         // Check for continuous!!
         int roi_size = roi.rows * roi.cols * sizeof(unsigned char) * 3;
         memcpy(pool_notify_DataBuf, roi.data, roi_size);
 
-        bgrTimer.Pause();
+        //bgrTimer.Pause();
 
         // New: float to fix on GPP:
         // This can be done more efficient with pointers instead of .at and single loop :)
@@ -519,17 +530,17 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
        
         // This works:
         
-        divideSqrtTimer.Start();
-        int fixed[48];
+        //divideSqrtTimer.Start();
+        uint16_t fixed[48];
         for(int r = 0; r < 3; r++) {
           for(int c = 0; c < target_candidate.cols; c++) {
             float temp = static_cast<float>((sqrt(ms.target_model.at<float>(r, c)/target_candidate.at<float>(r, c))));
             fixed[r*target_candidate.cols + c] = FloatToFixed(temp);
           }
         }
-        divideSqrtTimer.Pause();
+        //divideSqrtTimer.Pause();
 
-        memcpy(&pool_notify_DataBuf[roi_size], fixed, 48 * sizeof(int));
+        memcpy(&pool_notify_DataBuf[roi_size], fixed, 48 * sizeof(uint16_t));
 
         POOL_writeback (POOL_makePoolId(processorId, SAMPLE_POOL_ID),
                   pool_notify_DataBuf,
@@ -553,7 +564,7 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
         // Wait for DSP
         sem_wait(&sem);
 
-        calweightTimer.Start();
+        //calweightTimer.Start();
 
         // Tell DSP to execute
         status = NOTIFY_notify (processorId, pool_notify_IPS_ID, pool_notify_IPS_EVENTNO, (Uint32)(7));
@@ -564,67 +575,84 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
                      (int)status) ;
         }
 
+        // Precalculate norms, since they are constant anyways
+        // Can be optimized quite a bit!
+        if(first) {
+          for(int i = 0; i < norms_length; i++) {
+            norms[i] = static_cast<float>(i - centre)/centre;
+          }
+          /*
+          if(ms.target_Region.height < ms.target_Region.width) {
+            for(int i = 0; i < ms.target_Region.height; i++) {
+              norms_i[i] = static_cast<float>(i - centre)/centre;
+              norms_j[i] = norms_i[i];
+              //norms_j[i] = static_cast<float>(i - centre)/centre;
+            }
+            for(int j = ms.target_Region.height; j < ms.target_Region.width; j++) {
+              norms_j[j] = static_cast<float>(j - centre)/centre;
+            }
+          }
+          else if(ms.target_Region.width < ms.target_Region.height) {
+            for(int j = 0; j < ms.target_Region.width; j++) {
+              norms_i[j] = static_cast<float>(j - centre)/centre;
+              norms_j[j] = norms_i[j];
+              //norms_j[j] = static_cast<float>(j - centre)/centre;
+            }
+            for(int i = ms.target_Region.width; i < ms.target_Region.height; i++) {
+              norms_i[i] = static_cast<float>(i - centre)/centre;
+            }
+          }
+          else {
+            for(int i = 0; i < ms.target_Region.width; i++) {
+              norms_i[i] = static_cast<float>(i - centre)/centre;
+              norms_j[i] = norms_i[i];
+             //norms_j[i] = static_cast<float>(j - centre)/centre;
+            }
+          }
+          */
+
+          first = false;
+        }
+
         // Wait for execution
         sem_wait(&sem);
 
-        calweightTimer.Pause();
+        //calweightTimer.Pause();
 
         POOL_invalidate (POOL_makePoolId(processorId, SAMPLE_POOL_ID),
                                         pool_notify_DataBuf,
                                         pool_notify_BufferSize);
 
-
-        weightTimer.Start();
-        // We should probably speed up this in some way!
-        
-        int* int_buf = (int*)pool_notify_DataBuf;
-        /*for(int r = 0; r < ms.target_Region.height; r++) {
-          for(int c = 0; c < ms.target_Region.width; c++) {
-            dspWeight[r*ms.target_Region.width + c] = FixedToFloat(int_buf[r*ms.target_Region.width + c]);
-            //printf("Return: %f %d\n", dspWeight[r*ms.target_Region.width + c], int_buf[r*ms.target_Region.width + c]);
-          }
-        }*/
-        weightTimer.Pause();
-      
-        //cv::Mat weighhht = ms.CalWeight(frame,ms.target_model,target_candidate,ms.target_Region);
-
-        /*for(int i = 0; i < weighhht.rows; i++) {
-          for(int j = 0; j < weighhht.cols; j++) {
-            printf(" %f", weighhht.at<float>(i,j));
-          }
-          printf("\n");
-        }*/
-
-        //cv::Mat weight = ms.CalWeight(frame, ms.target_model, target_candidate, ms.target_Region);
-
-        trackTimer.Start();
+        //trackTimer.Start();
 
         float delta_x = 0.0;
         float sum_wij = 0.0;
         float delta_y = 0.0;
-        float mult = 0.0;
+        bool mult;
 
         next_rect.x = ms.target_Region.x;
         next_rect.y = ms.target_Region.y;
-        next_rect.width = ms.target_Region.width;
-        next_rect.height = ms.target_Region.height;
+        uint16_t* int_buf = (uint16_t*)pool_notify_DataBuf;
 
-        for(int i=0;i<weight.rows;i++)
+        for(int i = 0; i < ms.target_Region.height; i++)
         {
-            float norm_i = static_cast<float>(i-centre)/centre;
-            float pow1 = norm_i*norm_i;
+            //float norm_i = static_cast<float>(i-centre)/centre;
+            float pow1 = norms[i]*norms[i];
 
-            for(int j=0;j<weight.cols;j++)
+            for(int j = 0; j < ms.target_Region.width; j++)
             {
-                //printf("%d ", static_cast<int>(weight.at<float>(i,j)*1000));
-                float norm_j = static_cast<float>(j-centre)/centre;
-                mult = pow1 + norm_j*norm_j > 1.0 ? 0.0 : 1.0;
-                //delta_x += static_cast<float>(norm_j*static_cast<int>(weight.at<float>(i,j))*mult);
-                //delta_y += static_cast<float>(norm_i*static_cast<int>(weight.at<float>(i,j))*mult);
-                //sum_wij += static_cast<float>(static_cast<int>(weight.at<float>(i,j))*mult);
-                float tmp = FixedToFloat(int_buf[i*weight.cols + j]) * static_cast<float>(mult);
-                delta_x += norm_j*tmp; // dspWeight[i*weight.cols + j]*mult);
-                delta_y += norm_i*tmp; //dspWeight[i*weight.cols + j]*mult);
+                //float norm_j = static_cast<float>(j-centre)/centre;
+                mult = pow1 + norms[j]*norms[j] > 1.0 ? false : true;
+                if(!mult){
+                  if(norms[j] > 0) {
+                    break;
+                  }
+                  continue;
+                }
+                
+                float tmp = FixedToFloat(int_buf[i*ms.target_Region.width + j]);
+                delta_x += norms[j]*tmp;
+                delta_y += norms[i]*tmp;
                 sum_wij += tmp;
             }
         }
@@ -632,7 +660,7 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
         next_rect.x += static_cast<int>((delta_x/sum_wij)*centre);
         next_rect.y += static_cast<int>((delta_y/sum_wij)*centre);
 
-        trackTimer.Pause();
+        //trackTimer.Pause();
 
         if(abs(next_rect.x-ms.target_Region.x)<1 && abs(next_rect.y-ms.target_Region.y)<1)
         {
@@ -664,13 +692,13 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
   kernelTimer.Print();
   calweightTimer.Print();
   bgrTimer.Print();
-  weightTimer.Print();
   pdfTimer.Print();
   divideSqrtTimer.Print();
   notificationTimer.Print();
   trackTimer.Print();
+  testTimer.Print();
 
-  delete[] dspWeight;
+  delete[] norms;
 
   return status ;
 }

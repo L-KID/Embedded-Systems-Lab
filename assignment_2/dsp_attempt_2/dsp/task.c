@@ -37,13 +37,13 @@ struct config {
 } cfg;
 
 void MeanShift_Init();
-int* CalWeight(unsigned char* frame, int* target_candidate, struct Rect rec, int* data);
+Uint16* CalWeight(unsigned char* frame, Uint16* target_candidate, struct Rect rec, Uint16* data);
 
 /* Conversion between floating point and fixed point */
 const int scale = 16; // 1/2^16
 #define FloatToFixed(x) (x* (float)(1<<scale))
 #define FixedToFloat(x) ((float)x/(float)(1<<scale))
-#define MUL(x, y)  ((((x) >> 8)*((y) >> 8)) >> 0)
+#define MUL(x, y)  ((((x) >> 4)*((y) >> 4)) >> 0)
 #define DIV(x, y) (((x)<<7)/(y)<<9)
 
 int SquareRootRounded(int x)
@@ -167,15 +167,15 @@ int rows, cols;
 
 Int Task_execute (Task_TransferInfo * info)
 {
-  int* target_candidate;
-  int* result;
+  Uint16* target_candidate;
+  Uint16* result;
 
   // This one holds the blue, green and red frames, respectively
   unsigned char* frame;
 
   MeanShift_Init();
 
-  target_candidate  = (int*) malloc(48 * sizeof(int));       
+  target_candidate  = (Uint16*) malloc(48 * sizeof(Uint16));       
 
   // Cannot run if memory is not successfully allocated
   if (target_candidate == NULL) { 
@@ -206,7 +206,7 @@ Int Task_execute (Task_TransferInfo * info)
         NOTIFY_notify(ID_GPP,MPCSXFER_IPS_ID,MPCSXFER_IPS_EVENTNO,(Uint32)666);
       }
 
-      result = (int*) malloc(target_region.width * target_region.height * sizeof(int));
+      result = (Uint16*) malloc(target_region.width * target_region.height * sizeof(Uint16));
       if(result == NULL) {
         NOTIFY_notify(ID_GPP,MPCSXFER_IPS_ID,MPCSXFER_IPS_EVENTNO,(Uint32)666);
       }
@@ -221,7 +221,7 @@ Int Task_execute (Task_TransferInfo * info)
 
       // New: store frame and target_candidate ! change name
       memcpy(frame, buf, target_region.width * target_region.height * sizeof(unsigned char) * 3);
-      memcpy(target_candidate, &buf[3 * target_region.width * target_region.height * sizeof(unsigned char)], 48 * sizeof(int));
+      memcpy(target_candidate, &buf[3 * target_region.width * target_region.height * sizeof(unsigned char)], 48 * sizeof(Uint16));
 
       NOTIFY_notify(ID_GPP,MPCSXFER_IPS_ID,MPCSXFER_IPS_EVENTNO,(Uint32)0);
       break;
@@ -231,7 +231,7 @@ Int Task_execute (Task_TransferInfo * info)
       CalWeight(frame, target_candidate, target_region, result);
 
       // Copy weight to shared buffer
-      memcpy(buf, result, target_region.width * target_region.height * sizeof(int));
+      memcpy(buf, result, target_region.width * target_region.height * sizeof(Uint16));
       
       BCACHE_wbInv ((Ptr)buf, length, TRUE);
 
@@ -303,29 +303,44 @@ void MeanShift_Init() {
     bin_width = cfg.pixel_range / cfg.num_bins;
 }
 
-int* CalWeight(unsigned char* frame, int* target_candidate, struct Rect rec, int* data)
+static const unsigned char lookup[256] = { 
+  0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 ,
+  1 , 1 , 1 , 1 , 1 , 1 , 1 , 1 , 1 , 1 , 1 , 1 , 1 , 1 , 1 , 1 ,
+  2 , 2 , 2 , 2 , 2 , 2 , 2 , 2 , 2 , 2 , 2 , 2 , 2 , 2 , 2 , 2 ,
+  3 , 3 , 3 , 3 , 3 , 3 , 3 , 3 , 3 , 3 , 3 , 3 , 3 , 3 , 3 , 3 ,                                               
+  4 , 4 , 4 , 4 , 4 , 4 , 4 , 4 , 4 , 4 , 4 , 4 , 4 , 4 , 4 , 4 ,
+  5 , 5 , 5 , 5 , 5 , 5 , 5 , 5 , 5 , 5 , 5 , 5 , 5 , 5 , 5 , 5 ,
+  6 , 6 , 6 , 6 , 6 , 6 , 6 , 6 , 6 , 6 , 6 , 6 , 6 , 6 , 6 , 6 ,
+  7 , 7 , 7 , 7 , 7 , 7 , 7 , 7 , 7 , 7 , 7 , 7 , 7 , 7 , 7 , 7 ,
+  8 , 8 , 8 , 8 , 8 , 8 , 8 , 8 , 8 , 8 , 8 , 8 , 8 , 8 , 8 , 8 ,
+  9 , 9 , 9 , 9 , 9 , 9 , 9 , 9 , 9 , 9 , 9 , 9 , 9 , 9 , 9 , 9 ,
+  10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10,
+  11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 
+  12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 
+  13, 13, 13, 13, 13, 13, 13, 13, 13, 13, 13, 13, 13, 13, 13, 13, 
+  14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 
+  15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15,
+};
+
+Uint16* CalWeight(unsigned char* frame, Uint16* target_candidate, struct Rect rec, Uint16* data)
 {
     int i;
     int index = 0;
 
-    unsigned char curr_pixel;
     unsigned char bin_value;
 
     for(i = 0; i < rec.height * rec.width; i++) {
         // First
-        curr_pixel  = frame[index++];
-        bin_value   = curr_pixel/bin_width;
-        data[i]     = target_candidate[bin_value];
+        bin_value = lookup[frame[index++]];
+        data[i]   = target_candidate[bin_value];
 
         // Second
-        curr_pixel  = frame[index++];
-        bin_value   = curr_pixel/bin_width;
-        data[i]     = MUL( data[i], target_candidate[16 + bin_value] );
+        bin_value = lookup[frame[index++]];
+        data[i]   = MUL( data[i], target_candidate[16 + bin_value] );
 
         // Third
-        curr_pixel  = frame[index++];
-        bin_value   = curr_pixel/bin_width;
-        data[i]     = MUL( data[i], target_candidate[2*16 + bin_value]);
+        bin_value = lookup[frame[index++]];
+        data[i]   = MUL( data[i], target_candidate[2*16 + bin_value]);
     }
 
     return data;
