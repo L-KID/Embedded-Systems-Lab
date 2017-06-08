@@ -47,23 +47,10 @@ cv::Mat MeanShift::pdf_representation(const cv::Mat &frame, const cv::Rect &rect
     static int k = 0;
 
     cv::Mat kernel(rect.height,rect.width,CV_32F,cv::Scalar(0));
-    float32_t constants[3*rect.height*rect.width];
     if(k == 0) {
         normalized_C = 1.0 / Epanechnikov_kernel(kernel);
-
-        int index = 0;
-        for(int i=0;i < rect.height;i++)
-        {
-            for(int j=0;j < rect.width;j++)
-            {
-                constants[index] = kernel.at<float>(i,j)*normalized_C;
-                constants[index+1] = constants[index];
-                constants[index+2] = constants[index+1];
-                index+=3;
-            }
-        }
-
-        k++;
+	
+	k++;
     }
 
     cv::Mat pdf_model(8,16,CV_32F,cv::Scalar(1e-10));
@@ -73,11 +60,10 @@ cv::Mat MeanShift::pdf_representation(const cv::Mat &frame, const cv::Rect &rect
 
     int row_index = rect.y;
     int col_index = rect.x;
-    int const_index = 0;
 
-    float32_t cp_value[12];
-    float32_t temp_model[12];
     float32_t divbybinw = {1.0/bin_width};
+    float32_t cp_value[12], temp_model[12], constants[12];
+    float32_t constant_A, constant_B, constant_C, constant_D;
     float32x4_t neon_cp_value_A, neon_cp_value_B, neon_cp_value_C;
     float32x4_t neon_b_value_A, neon_b_value_B, neon_b_value_C;
     float32x4_t neon_model_A, neon_model_B, neon_model_C;
@@ -88,7 +74,7 @@ cv::Mat MeanShift::pdf_representation(const cv::Mat &frame, const cv::Rect &rect
     for(int i=0;i < rect.height;i++)
     {
         col_index = rect.x;
-        for(int j=0;j < rect.width/4;j++)                                       // calculate four pixels/loop i.e. pixels A through D
+        for(int j=0;j < rect.width;j+=4)                                       // calculate four pixels/loop i.e. pixels A through D
         {
             curr_pixel_value_A = frame.at<cv::Vec3b>(row_index,col_index);      // bgr values pixel A
             curr_pixel_value_B = frame.at<cv::Vec3b>(row_index,col_index+1);    // bgr values pixel B
@@ -127,10 +113,25 @@ cv::Mat MeanShift::pdf_representation(const cv::Mat &frame, const cv::Rect &rect
             bin_value_D[1] = vgetq_lane_f32(neon_b_value_C, 2);
             bin_value_D[2] = vgetq_lane_f32(neon_b_value_C, 3);
 
-            neon_constant_A = vmovq_n_f32(constants[const_index]);
-            neon_constant_B = vmovq_n_f32(constants[const_index+4]);
-            neon_constant_C = vmovq_n_f32(constants[const_index+8]);
-            const_index+=12;
+	    constant_A = kernel.at<float>(i,j)*normalized_C;
+	    constant_B = kernel.at<float>(i,j+1)*normalized_C;
+	    constant_C = kernel.at<float>(i,j+2)*normalized_C;
+	    constant_D = kernel.at<float>(i,j+3)*normalized_C;
+	    constants[0] = constant_A;
+	    constants[1] = constant_A;
+	    constants[2] = constant_A;
+	    constants[3] = constant_B;
+	    constants[4] = constant_B;
+	    constants[5] = constant_B;
+	    constants[6] = constant_C;
+	    constants[7] = constant_C;
+	    constants[8] = constant_C;
+	    constants[9] = constant_D;
+	    constants[10] = constant_D;
+	    constants[11] = constant_D;
+            neon_constant_A = vmovq_n_f32(constants[0]);
+            neon_constant_B = vmovq_n_f32(constants[4]);
+            neon_constant_C = vmovq_n_f32(constants[8]);
 
             temp_model[0] = pdf_model.at<float>(0,bin_value_A[0]);
             temp_model[1] = pdf_model.at<float>(1,bin_value_A[1]);
