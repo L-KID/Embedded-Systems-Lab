@@ -29,7 +29,7 @@ int main(int argc, char ** argv)
     frame_capture.read(frame);
     
     MeanShift ms; // creat meanshift obj
-    ms.Initialize(frame,rect); // init the meanshift
+    ms.Init_target_frame(frame,rect); // init the meanshift
 
     int codec = CV_FOURCC('F', 'L', 'V', '1');
     cv::VideoWriter writer("tracking_result.avi", codec, 20, cv::Size(frame.cols,frame.rows));
