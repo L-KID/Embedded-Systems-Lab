@@ -25,6 +25,7 @@
 
 /* ------------------------------------ OpenCV Headers                  */
 #include "meanshift.h"
+#include "arm_neon.h"
 
 /*------------------------------------- Fixed/Floating point conversion */
 const int scale = 8; // 1/2^16
@@ -483,9 +484,9 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
   float centre = static_cast<float>((ms.target_Region.height-1)/2.0);
 
   // Check allocation!!!
-  float* norms;
+  float32_t* norms;
   int norms_length = rect.height > rect.width ? rect.height : rect.width;
-  norms = new float[norms_length];
+  norms = new float32_t[norms_length];
 
   for(fcount=0; fcount<TotalFrames; ++fcount)
   {
@@ -579,7 +580,7 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
         // Can be optimized quite a bit!
         if(first) {
           for(int i = 0; i < norms_length; i++) {
-            norms[i] = static_cast<float>(i - centre)/centre;
+            norms[i] = static_cast<float32_t>(i - centre)/centre;
           }
           /*
           if(ms.target_Region.height < ms.target_Region.width) {
@@ -625,23 +626,78 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
 
         //trackTimer.Start();
 
-        float delta_x = 0.0;
+        /*float delta_x = 0.0;
         float sum_wij = 0.0;
-        float delta_y = 0.0;
-        bool mult;
+        float delta_y = 0.0;*/
+        unsigned char mult;
 
         next_rect.x = ms.target_Region.x;
         next_rect.y = ms.target_Region.y;
         uint16_t* int_buf = (uint16_t*)pool_notify_DataBuf;
 
+
+        float delta_x = 0.0;
+        float32x4_t neon_deltax;
+        neon_deltax = vdupq_n_f32(0.0);
+        float delta_y = 0.0;
+        float32x4_t neon_deltay;
+        neon_deltay = vdupq_n_f32(0.0);
+        float sum_wij = 0.0;
+        float32x4_t neon_sumwij;
+        neon_sumwij = vdupq_n_f32(0.0);
+        float32_t tmp[4];
+        float32x4_t neon_tmp, neon_normi, neon_normj;
+
+
+
+
         for(int i = 0; i < ms.target_Region.height; i++)
         {
             //float norm_i = static_cast<float>(i-centre)/centre;
-            float pow1 = norms[i]*norms[i];
+            float32_t pow1 = norms[i]*norms[i];
 
-            for(int j = 0; j < ms.target_Region.width; j++)
+            unsigned char remainder = ms.target_Region.width % 4;            
+            for(int j = 0; j < ms.target_Region.width - remainder; j+=4)
             {
+
+              mult = pow1 + norms[j]*norms[j] > 1.0?0.0:1.0;
+              tmp[0] = FixedToFloat(int_buf[i*ms.target_Region.width + j])*mult;
+
+              mult = pow1 + norms[j+1]*norms[j+1] > 1.0?0.0:1.0;
+              tmp[1] = FixedToFloat(int_buf[i*ms.target_Region.width + j+1])*mult;
+
+              mult = pow1 + norms[j+2]*norms[j+2] > 1.0?0.0:1.0;
+              tmp[2] = FixedToFloat(int_buf[i*ms.target_Region.width + j+2])*mult;
+
+              mult = pow1 + norms[j+3]*norms[j+3] > 1.0?0.0:1.0;
+              tmp[3] = FixedToFloat(int_buf[i*ms.target_Region.width + j+3])*mult;
+
+              neon_tmp = vld1q_f32(tmp);
+
+              neon_normi = vmovq_n_f32(norms[i]);
+              neon_normj = vld1q_f32(&norms[j]);
+
+              neon_deltax = vmlaq_f32(neon_deltax, neon_tmp, neon_normj);
+              neon_deltay = vmlaq_f32(neon_deltay, neon_tmp, neon_normi);
+              neon_sumwij = vaddq_f32(neon_sumwij, neon_tmp);
                 //float norm_j = static_cast<float>(j-centre)/centre;
+                /*
+                mult = pow1 + norms[j]*norms[j] > 1.0 ? false : true;
+                if(!mult){
+                  if(norms[j] > 0) {
+                    break;
+                  }
+                  continue;
+                }
+                
+                float tmp = FixedToFloat(int_buf[i*ms.target_Region.width + j]);
+                delta_x += norms[j]*tmp;
+                delta_y += norms[i]*tmp;
+                sum_wij += tmp;*/
+            }
+
+            for(int j = ms.target_Region.width - remainder; j < ms.target_Region.width; j++) {
+              
                 mult = pow1 + norms[j]*norms[j] > 1.0 ? false : true;
                 if(!mult){
                   if(norms[j] > 0) {
@@ -656,6 +712,19 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
                 sum_wij += tmp;
             }
         }
+
+        delta_x += vgetq_lane_f32(neon_deltax, 0)
+            + vgetq_lane_f32(neon_deltax, 1)
+            + vgetq_lane_f32(neon_deltax, 2)
+            + vgetq_lane_f32(neon_deltax, 3);
+          delta_y += vgetq_lane_f32(neon_deltay, 0)
+            + vgetq_lane_f32(neon_deltay, 1)
+            + vgetq_lane_f32(neon_deltay, 2)
+            + vgetq_lane_f32(neon_deltay, 3);
+          sum_wij += vgetq_lane_f32(neon_sumwij, 0)
+            + vgetq_lane_f32(neon_sumwij, 1)
+            + vgetq_lane_f32(neon_sumwij, 2)
+            + vgetq_lane_f32(neon_sumwij, 3);
 
         next_rect.x += static_cast<int>((delta_x/sum_wij)*centre);
         next_rect.y += static_cast<int>((delta_y/sum_wij)*centre);
