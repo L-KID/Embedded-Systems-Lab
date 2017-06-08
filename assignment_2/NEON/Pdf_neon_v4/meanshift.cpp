@@ -91,9 +91,9 @@ cv::Mat MeanShift::pdf_representation(const cv::Mat &frame, const cv::Rect &rect
 	    memcpy(&cp_values[3], &curr_pixel_value_B, 12);
 	    memcpy(&cp_values[6], &curr_pixel_value_C, 12);
 	    memcpy(&cp_values[9], &curr_pixel_value_D, 12);
-            neon_cp_value_A = vld1q_f32(&cp_values[0]);      // bAgArAbB
-            neon_cp_value_B = vld1q_f32(&cp_values[4]);      // gBrBbCgC
-            neon_cp_value_C = vld1q_f32(&cp_values[8]);      // rCbDgDrD
+            neon_cp_value_A = vld1q_f32(&cp_values[0]);      	// bAgArAbB
+            neon_cp_value_B = vld1q_f32(&cp_values[4]);      	// gBrBbCgC
+            neon_cp_value_C = vld1q_f32(&cp_values[8]);		// rCbDgDrD
 
 	    neon_b_value_A = vmulq_f32(neon_cp_value_A, neon_divbybinw);
 	    neon_b_value_B = vmulq_f32(neon_cp_value_B, neon_divbybinw);
@@ -102,14 +102,14 @@ cv::Mat MeanShift::pdf_representation(const cv::Mat &frame, const cv::Rect &rect
 	    vst1q_f32(&bin_values[4], neon_b_value_B);
 	    vst1q_f32(&bin_values[8], neon_b_value_C);
 
-	    constant_A = kernel.at<float>(i,j);
-	    constant_B = kernel.at<float>(i,j+1);
+	    constant_A = kernel.at<float>(i,j);			// multiplication by normalized_C is
+	    constant_B = kernel.at<float>(i,j+1);		// already included at this point
 	    constant_C = kernel.at<float>(i,j+2);
 	    constant_D = kernel.at<float>(i,j+3);
-	    constants[0] = constants[1] = constants[2] = constant_A;
-	    constants[3] = constants[4] = constants[5] = constant_B;
-	    constants[6] = constants[7] = constants[8] = constant_C;
-	    constants[9] = constants[10] = constants[11] = constant_D;
+	    constants[0] = constants[1] = constants[2] = constant_A;	// Pixel A constant
+	    constants[3] = constants[4] = constants[5] = constant_B;	// Pixel B constant
+	    constants[6] = constants[7] = constants[8] = constant_C;	// Pixel C constant
+	    constants[9] = constants[10] = constants[11] = constant_D;	// Pixel D constant
             neon_constant_A = vmovq_n_f32(constants[0]);
             neon_constant_B = vmovq_n_f32(constants[4]);
             neon_constant_C = vmovq_n_f32(constants[8]);
