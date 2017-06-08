@@ -470,6 +470,7 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
   float* dspWeight = new float[ms.target_Region.height * ms.target_Region.width];
   cv::Mat weight = cv::Mat(ms.target_Region.height, ms.target_Region.width, CV_32F, dspWeight);
 
+
   // Start tracking
   int TotalFrames = 32;
   int fcount;
@@ -489,6 +490,7 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
       // Track function from MS class
       cv::Rect next_rect;
 
+      float centre = static_cast<float>((ms.target_Region.height-1)/2.0);
 
       for(int iter=0;iter<ms.cfg.MaxIter;iter++)
       {
@@ -522,7 +524,7 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
         for(int r = 0; r < 3; r++) {
           for(int c = 0; c < target_candidate.cols; c++) {
             float temp = static_cast<float>((sqrt(ms.target_model.at<float>(r, c)/target_candidate.at<float>(r, c))));
-              fixed[r*target_candidate.cols + c] = FloatToFixed(temp/1000);
+            fixed[r*target_candidate.cols + c] = FloatToFixed(temp);
           }
         }
         divideSqrtTimer.Pause();
@@ -574,21 +576,33 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
 
         weightTimer.Start();
         // We should probably speed up this in some way!
+        
         int* int_buf = (int*)pool_notify_DataBuf;
-        for(int r = 0; r < ms.target_Region.height; r++) {
+        /*for(int r = 0; r < ms.target_Region.height; r++) {
           for(int c = 0; c < ms.target_Region.width; c++) {
-            dspWeight[r*ms.target_Region.width + c] = FixedToFloat(int_buf[r*ms.target_Region.width + c]*1000);
+            dspWeight[r*ms.target_Region.width + c] = FixedToFloat(int_buf[r*ms.target_Region.width + c]);
+            //printf("Return: %f %d\n", dspWeight[r*ms.target_Region.width + c], int_buf[r*ms.target_Region.width + c]);
           }
-        }
+        }*/
         weightTimer.Pause();
+      
+        //cv::Mat weighhht = ms.CalWeight(frame,ms.target_model,target_candidate,ms.target_Region);
+
+        /*for(int i = 0; i < weighhht.rows; i++) {
+          for(int j = 0; j < weighhht.cols; j++) {
+            printf(" %f", weighhht.at<float>(i,j));
+          }
+          printf("\n");
+        }*/
+
+        //cv::Mat weight = ms.CalWeight(frame, ms.target_model, target_candidate, ms.target_Region);
 
         trackTimer.Start();
 
         float delta_x = 0.0;
         float sum_wij = 0.0;
         float delta_y = 0.0;
-        float centre = static_cast<float>((weight.rows-1)/2.0);
-        double mult = 0.0;
+        float mult = 0.0;
 
         next_rect.x = ms.target_Region.x;
         next_rect.y = ms.target_Region.y;
@@ -597,14 +611,21 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
 
         for(int i=0;i<weight.rows;i++)
         {
+            float norm_i = static_cast<float>(i-centre)/centre;
+            float pow1 = norm_i*norm_i;
+
             for(int j=0;j<weight.cols;j++)
             {
-                float norm_i = static_cast<float>(i-centre)/centre;
+                //printf("%d ", static_cast<int>(weight.at<float>(i,j)*1000));
                 float norm_j = static_cast<float>(j-centre)/centre;
-                mult = pow(norm_i,2)+pow(norm_j,2)>1.0?0.0:1.0;
-                delta_x += static_cast<float>(norm_j*weight.at<float>(i,j)*mult);
-                delta_y += static_cast<float>(norm_i*weight.at<float>(i,j)*mult);
-                sum_wij += static_cast<float>(weight.at<float>(i,j)*mult);
+                mult = pow1 + norm_j*norm_j > 1.0 ? 0.0 : 1.0;
+                //delta_x += static_cast<float>(norm_j*static_cast<int>(weight.at<float>(i,j))*mult);
+                //delta_y += static_cast<float>(norm_i*static_cast<int>(weight.at<float>(i,j))*mult);
+                //sum_wij += static_cast<float>(static_cast<int>(weight.at<float>(i,j))*mult);
+                float tmp = FixedToFloat(int_buf[i*weight.cols + j]) * static_cast<float>(mult);
+                delta_x += norm_j*tmp; // dspWeight[i*weight.cols + j]*mult);
+                delta_y += norm_i*tmp; //dspWeight[i*weight.cols + j]*mult);
+                sum_wij += tmp;
             }
         }
 

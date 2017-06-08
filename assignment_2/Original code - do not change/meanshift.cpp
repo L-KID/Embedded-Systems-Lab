@@ -4,6 +4,7 @@
 */
 
 #include"meanshift.h"
+#include <cstdio>
 
 MeanShift::MeanShift()
 {
@@ -113,6 +114,13 @@ cv::Rect MeanShift::track(const cv::Mat &next_frame)
     {
         cv::Mat target_candidate = pdf_representation(next_frame,target_Region);
         cv::Mat weight = CalWeight(next_frame,target_model,target_candidate,target_Region);
+
+        for(int i = 0; i < 10; i++) {
+            for(int k = 0; k < 10; k++) {
+                printf(" %f", weight.at<float>(i,k));
+            }
+            printf("\n");
+        }
 
         float delta_x = 0.0;
         float sum_wij = 0.0;
