@@ -1,5 +1,5 @@
-#include <stdlib.h>
-#include <stdio.h>
+#include<stdlib.h>
+#include<stdio.h>
 
 #include <semaphore.h>
 /*  ----------------------------------- DSP/BIOS Link                   */
@@ -16,27 +16,15 @@
 
 
 /*  ----------------------------------- Application Header              */
-#include "pool_notify.h"
-//#include <pool_notify_os.h>
-
-#if defined (__cplusplus)
-//extern "C" {
-#endif /* defined (__cplusplus) */
-
-/* ------------------------------------ OpenCV Headers                  */
 #include "meanshift.h"
 
-/*------------------------------------- Fixed/Floating point conversion */
-const int scale = 8; // 1/2^16
-#define FloatToFixed(x) (x* (float)(1<<scale))
-#define FixedToFloat(x) ((float)x/(float)(1<<scale))
 
-#ifndef ARMCC
-#include "markers.h"
-#endif
+//#include <pool_notify_os.h>
 
-/* ------------------------------------ Timer                           */
-#include "Timer.h"
+
+//#if defined (__cplusplus)
+extern "C" {
+//#endif /* defined (__cplusplus)
 
 /*  ============================================================================
  *  @const   NUM_ARGS
@@ -336,6 +324,20 @@ NORMAL_API DSP_STATUS pool_notify_Create (	IN Char8 * dspExecutable,
     return status ;
 }
 
+void unit_init(void) 
+{
+    unsigned int i;
+
+    // Initialize the array with something
+    for(i=0;i<pool_notify_BufferSize;i++) {
+       pool_notify_DataBuf[i] = i % 20 + i % 5;
+    }
+
+    for(i=0;i<10;i++) {
+       printf("Value before: %d\n", pool_notify_DataBuf[i]);
+    }
+}
+
 #include <sys/time.h>
 
 long long get_usec(void);
@@ -349,39 +351,15 @@ long long get_usec(void)
   return r;
 }
 
-void copy_float_matrix_to_buffer(cv::Mat matrix, unsigned char* buffer) 
+int sum_dsp(unsigned char* buf, int length) 
 {
-  float* float_buf = (float*)buffer;
-  if(matrix.isContinuous()) {
-      std::copy((float*)matrix.datastart, (float*)matrix.dataend, float_buf);
-  } else {
-      // Iterate and manually insert. There is probably some faster way to do this.
-      for (int row = 0; row < matrix.rows; row++) {
-          for (int col = 0; col < matrix.cols; col++) {
-              float_buf[row*matrix.rows + col] = matrix.at<float>(row, col);
-          }
-      }
-  }
+    int a=0,i;
+    for(i=0;i<length;i++) 
+	{
+       a=a+buf[i];
+    }
+    return a;
 }
-
-void copy_uchar_matrix_to_buffer(cv::Mat matrix, unsigned char* buffer) 
-{
-  if(matrix.isContinuous()) {
-      std::copy((unsigned char*)matrix.datastart, (unsigned char*)matrix.dataend, buffer);
-  } else {
-      // Iterate and manually insert. There is probably some faster way to do this.
-      for (int row = 0; row < matrix.rows; row++) {
-          for (int col = 0; col < matrix.cols; col++) {
-              buffer[row*matrix.rows + col] = matrix.at<unsigned char>(row, col);
-          }
-      }
-  }
-}
-
-/*void copy_uchar_vector_to_buffer(std::Vec vector, unsigned char* buffer) 
-{
-  std::copy((unsigned char*)vector.begin(), (unsigned char*)vector.end(), buffer);
-}*/
 
 /** ============================================================================
  *  @func   pool_notify_Execute
@@ -391,281 +369,58 @@ void copy_uchar_matrix_to_buffer(cv::Mat matrix, unsigned char* buffer)
  *  @modif  None
  *  ============================================================================
  */
-
 NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 processorId)
 {
-  DSP_STATUS  status    = DSP_SOK ;
+    DSP_STATUS  status    = DSP_SOK ;
+
+    long long start;
+    unsigned int i;
 
 	#if defined(DSP)
     unsigned char *buf_dsp;
 	#endif
-        printf("Here\n");
 
 	#ifdef DEBUG
-    printf ("Entered pool_notify_Execute !!!!()\n") ;
+    printf ("Entered pool_notify_Execute ()\n") ;
 	#endif
 
-  //start = get_usec();
-  Timer totalTimer("Total Time");
-  Timer kernelTimer("Kernel");
-  Timer calweightTimer("CalWeight");
-  Timer notificationTimer("Notification");
-  Timer divideSqrtTimer("Divide+Sqrt");
-  Timer bgrTimer("BGR");
-  Timer pdfTimer("PDF");
-  Timer trackTimer("Track");
-  Timer testTimer("Test");
+    unit_init();
 
-  // Initialize before tracking
-  cv::VideoCapture frame_capture = cv::VideoCapture( "car.avi" );
+    start = get_usec();
 
-  // this is used for testing the car video
-  // instead of selection of object of interest using mouse
-  // Constructor is x, y, width, height
-  cv::Rect rect(228, 367, 86, 58);
-  cv::Mat frame;
-  frame_capture.read(frame);
-  
-  MeanShift ms; // creat meanshift obj
-  ms.Init_target_frame(frame,rect); // init the meanshift
+	#if !defined(DSP)
+    printf(" Result is %d \n", sum_dsp(pool_notify_DataBuf,pool_notify_BufferSize));
+	#endif
 
-  int codec = CV_FOURCC('F', 'L', 'V', '1');
-  cv::VideoWriter writer("tracking_result.avi", codec, 20, cv::Size(frame.cols, frame.rows));
-
-  // Wait for DSP to be ready for command
-  sem_wait(&sem);
-
-  totalTimer.Start();
-
-  // Newest attempt (this one works).
-  // Send target_Region size to DSP
-  memcpy(&pool_notify_DataBuf[0], &rect.width, sizeof(int));
-  memcpy(&pool_notify_DataBuf[0 + sizeof(int)], &rect.height, sizeof(int));
-
-
-  POOL_writeback (POOL_makePoolId(processorId, SAMPLE_POOL_ID),
+	#if defined(DSP)
+    POOL_writeback (POOL_makePoolId(processorId, SAMPLE_POOL_ID),
                     pool_notify_DataBuf,
                     pool_notify_BufferSize);
 
-  POOL_translateAddr ( POOL_makePoolId(processorId, SAMPLE_POOL_ID),
-                       (void**)&buf_dsp,
-                       AddrType_Dsp,
-                       (Void *) pool_notify_DataBuf,
-                       AddrType_Usr) ;
+    POOL_translateAddr ( POOL_makePoolId(processorId, SAMPLE_POOL_ID),
+                         (void**)&buf_dsp,
+                         AddrType_Dsp,
+                         (Void *) pool_notify_DataBuf,
+                         AddrType_Usr) ;
 
-  notificationTimer.Start();
-  status = NOTIFY_notify (processorId, pool_notify_IPS_ID, pool_notify_IPS_EVENTNO, (Uint32)1);
-  notificationTimer.Pause();
+    // Tell DSP to execute
+    NOTIFY_notify (processorId,pool_notify_IPS_ID,pool_notify_IPS_EVENTNO,1);
 
-  if (DSP_FAILED (status)) 
-  {
-      printf ("NOTIFY_notify () DataBuf failed."
-              " Status = [0x%x]\n",
-               (int)status) ;
-  }
+    sem_wait(&sem);
+	#endif
 
-  // Wait for DSP to save target_Region size
-  sem_wait(&sem);
+    POOL_invalidate (POOL_makePoolId(processorId, SAMPLE_POOL_ID),
+                                    pool_notify_DataBuf,
+                                    pool_notify_BufferSize);
+
+    printf("Sum execution time %lld us.\n", get_usec()-start);
 
 
-  // Start tracking
-  int TotalFrames = 32;
-  int fcount;
-  bool first = true;
+    for(i=0;i<10;i++) {
+       printf("Value after: %d\n", (unsigned char)pool_notify_DataBuf[i]);
+    }
 
-  // For tracking, fixed size
-  cv::Rect next_rect; 
-  next_rect.width = ms.target_Region.width;
-  next_rect.height = ms.target_Region.height;
-
-  float centre = static_cast<float>((ms.target_Region.height-1)/2.0);
-
-  // Check allocation!!!
-  float* norms;
-  float* normsPow;
-  int norms_length = rect.height > rect.width ? rect.height : rect.width;
-  norms = new float[norms_length];
-  normsPow = new float[norms_length];
-
-  for(fcount=0; fcount<TotalFrames; ++fcount)
-  {
-      // Read a frame
-      int status = frame_capture.read(frame);
-      if( 0 == status ) break;
-
-      kernelTimer.Start();
-
-      // track object
-      #ifndef ARMCC
-      // MCPROF_START();
-      #endif
-
-      // Track function from MS class
-      for(int iter=0;iter<ms.cfg.MaxIter;iter++)
-      {
-        pdfTimer.Start();
-        cv::Mat target_candidate = ms.pdf_representation(frame, ms.target_Region);
-        pdfTimer.Pause();
-
-        // Calculate weight on DSP
-        // Send ROI of BGR matrices and target_candidate to DSP
-        bgrTimer.Start();
-        // New without split
-        // Get ROI of frame (all colours)
-        cv::Mat roi = frame(ms.target_Region).clone();
-
-        // Put ROI in shared buffer
-        // Check for continuous!!
-        int roi_size = roi.rows * roi.cols * sizeof(unsigned char) * 3;
-        memcpy(pool_notify_DataBuf, roi.data, roi_size);
-
-        bgrTimer.Pause();
-
-        // New: float to fix on GPP:
-        // This can be done more efficient with pointers instead of .at and single loop :)
-        // Also, we only need first three rows, as only those are used!
-       
-        // This works:
-        
-        divideSqrtTimer.Start();
-        uint16_t fixed[48];
-        for(int r = 0; r < 3; r++) {
-          for(int c = 0; c < target_candidate.cols; c++) {
-            float temp = static_cast<float>((sqrt(ms.target_model.at<float>(r, c)/target_candidate.at<float>(r, c))));
-            fixed[r*target_candidate.cols + c] = FloatToFixed(temp);
-          }
-        }
-        divideSqrtTimer.Pause();
-
-        memcpy(&pool_notify_DataBuf[roi_size], fixed, 48 * sizeof(uint16_t));
-
-        POOL_writeback (POOL_makePoolId(processorId, SAMPLE_POOL_ID),
-                  pool_notify_DataBuf,
-                  pool_notify_BufferSize);
-
-        POOL_translateAddr ( POOL_makePoolId(processorId, SAMPLE_POOL_ID),
-                             (void**)&buf_dsp,
-                             AddrType_Dsp,
-                             (Void *) pool_notify_DataBuf,
-                             AddrType_Usr) ;
-
-        // Tell DSP to save it
-        status = NOTIFY_notify (processorId, pool_notify_IPS_ID, pool_notify_IPS_EVENTNO, (Uint32)(4));
-        if (DSP_FAILED (status)) 
-        {
-            printf ("NOTIFY_notify () DataBuf failed."
-                    " Status = [0x%x]\n",
-                     (int)status) ;
-        }
-
-        // Wait for DSP
-        sem_wait(&sem);
-        calweightTimer.Start();
-
-        // Tell DSP to execute
-        status = NOTIFY_notify (processorId, pool_notify_IPS_ID, pool_notify_IPS_EVENTNO, (Uint32)(7));
-        if (DSP_FAILED (status)) 
-        {
-            printf ("NOTIFY_notify () DataBuf failed."
-                    " Status = [0x%x]\n",
-                     (int)status) ;
-        }
-
-        // Precalculate norms, since they are constant anyways
-        // Can be optimized quite a bit!
-        if(first) {
-          for(int i = 0; i < norms_length; i++) {
-            norms[i] = static_cast<float>(i - centre)/centre;
-            normsPow[i] = norms[i]*norms[i];
-          }
-
-          first = false;
-        }
-
-        // Wait for execution
-        sem_wait(&sem);
-
-        calweightTimer.Pause();
-
-        POOL_invalidate (POOL_makePoolId(processorId, SAMPLE_POOL_ID),
-                                        pool_notify_DataBuf,
-                                        pool_notify_BufferSize);
-
-        trackTimer.Start();
-
-        float delta_x = 0.0;
-        float sum_wij = 0.0;
-        float delta_y = 0.0;
-        unsigned char mult;
-
-        next_rect.x = ms.target_Region.x;
-        next_rect.y = ms.target_Region.y;
-        uint16_t* int_buf = (uint16_t*)pool_notify_DataBuf;
-
-        for(int i = 0; i < ms.target_Region.height; i++)
-        {
-            for(int j = 0; j < ms.target_Region.width ; j++)
-            {
-                mult = normsPow[i] + normsPow[j] > 1.0 ? false : true;
-                if(!mult){
-                  if(norms[j] > 0) {
-                    break;
-                  }
-                  continue;
-                }
-                
-                float tmp = FixedToFloat(int_buf[i*ms.target_Region.width + j]);
-                delta_x += norms[j]*tmp;
-                delta_y += norms[i]*tmp;
-                sum_wij += tmp;
-            }
-        }
-
-        next_rect.x += static_cast<int>((delta_x/sum_wij)*centre);
-        next_rect.y += static_cast<int>((delta_y/sum_wij)*centre);
-
-        trackTimer.Pause();
-
-        if(abs(next_rect.x-ms.target_Region.x)<1 && abs(next_rect.y-ms.target_Region.y)<1)
-        {
-            break;
-        }
-        else
-        {
-            ms.target_Region.x = next_rect.x;
-            ms.target_Region.y = next_rect.y;
-        }
-      }      
-
-      kernelTimer.Pause();
-
-      #ifndef ARMCC
-      // MCPROF_STOP();
-      #endif
-      
-      // mark the tracked object in frame
-      cv::rectangle(frame,next_rect,cv::Scalar(0,0,255),3);
-
-      // write the frame
-      writer << frame;
-  }
-
-  totalTimer.Pause();
-
-  totalTimer.Print();
-  kernelTimer.Print();
-  calweightTimer.Print();
-  bgrTimer.Print();
-  pdfTimer.Print();
-  divideSqrtTimer.Print();
-  notificationTimer.Print();
-  trackTimer.Print();
-  testTimer.Print();
-
-  delete[] norms;
-  delete[] normsPow;
-
-  return status ;
+    return status ;
 }
 
 
@@ -832,16 +587,20 @@ NORMAL_API Void pool_notify_Main (IN Char8 * dspExecutable, IN Char8 * strBuffer
 STATIC Void pool_notify_Notify (Uint32 eventNo, Pvoid arg, Pvoid info)
 {
 	#ifdef DEBUG
-    //printf("Notification %8d \n", (int)info);
+    printf("Notification %8d \n", (int)info);
 	#endif
     /* Post the semaphore. */
-
-  if ((int)info == 0) {
-    sem_post(&sem); // Let execute
-  }
+    if((int)info==0) 
+	{
+        sem_post(&sem);
+    } 
+    else 
+	{
+        printf(" Result on DSP is %d \n", (int)info);
+    }
 }
 
 
-#if defined (__cplusplus)
+//#if defined (__cplusplus)
 //}
-#endif /* defined (__cplusplus) */
+//#endif /* defined (__cplusplus)
