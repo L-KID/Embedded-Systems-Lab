@@ -3,8 +3,9 @@
  * you can find all the formula in the paper
 */
 
-#include"meanshift.h"
-#include <cstdio>
+#include "meanshift.h"
+#include <iostream>
+#include <stdio.h>
 
 MeanShift::MeanShift()
 {
@@ -46,20 +47,23 @@ cv::Mat MeanShift::pdf_representation(const cv::Mat &frame, const cv::Rect &rect
     cv::Mat kernel(rect.height,rect.width,CV_32F,cv::Scalar(0));
     float normalized_C = 1.0 / Epanechnikov_kernel(kernel);
 
-    cv::Mat pdf_model(8,16,CV_32F,cv::Scalar(1e-10));
+    cv::Mat pdf_model(8,16,CV_32F,cv::Scalar(0));
 
-    cv::Vec3f curr_pixel_value;
+    //cv::Vec3f curr_pixel_value;
     cv::Vec3f bin_value;
+
+    unsigned char curr_pixel_value[3];
 
     int row_index = rect.y;
     int clo_index = rect.x;
 
     for(int i=0;i<rect.height;i++)
     {
-        clo_index = rect.x;
+        //clo_index = rect.x;
         for(int j=0;j<rect.width;j++)
         {
-            curr_pixel_value = frame.at<cv::Vec3b>(row_index,clo_index);
+            //curr_pixel_value = frame.at<cv::Vec3b>(row_index,clo_index);
+            memcpy(curr_pixel_value, &frame.data[i*frame.cols + j], 3*sizeof(unsigned char));
             bin_value[0] = (curr_pixel_value[0]/bin_width);
             bin_value[1] = (curr_pixel_value[1]/bin_width);
             bin_value[2] = (curr_pixel_value[2]/bin_width);
@@ -68,7 +72,7 @@ cv::Mat MeanShift::pdf_representation(const cv::Mat &frame, const cv::Rect &rect
             pdf_model.at<float>(2,bin_value[2]) += kernel.at<float>(i,j)*normalized_C;
             clo_index++;
         }
-        row_index++;
+        //row_index++;
     }
 
     return pdf_model;
@@ -112,15 +116,19 @@ cv::Rect MeanShift::track(const cv::Mat &next_frame)
     cv::Rect next_rect;
     for(int iter=0;iter<cfg.MaxIter;iter++)
     {
-        cv::Mat target_candidate = pdf_representation(next_frame,target_Region);
+        // Demo:
+        // Split ROI
+        cv::Mat roi = next_frame(target_Region).clone();
+
+        cv::Mat target_candidate = pdf_representation(roi,target_Region);
         cv::Mat weight = CalWeight(next_frame,target_model,target_candidate,target_Region);
 
-        for(int i = 0; i < 10; i++) {
-            for(int k = 0; k < 10; k++) {
-                printf(" %f", weight.at<float>(i,k));
-            }
-            printf("\n");
-        }
+        /*
+        printf("Type: %d\n", next_frame.type());
+
+        for(int i = 0; i < 100; i++) {
+            printf(" %d %d %d %d %d %d\n", next_frame.data[100*3*next_frame.cols + 100*3 + i], next_frame.data[100*3*next_frame.cols + 100*3 + i+1], next_frame.data[100*3*next_frame.cols + 100*3 + i+2], roi.data[i], roi.data[i+1], roi.data[i+2]);
+        }*/
 
         float delta_x = 0.0;
         float sum_wij = 0.0;

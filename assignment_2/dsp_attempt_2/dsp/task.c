@@ -40,47 +40,8 @@ void MeanShift_Init();
 Uint16* CalWeight(unsigned char* frame, Uint16* target_candidate, struct Rect rec, Uint16* data);
 
 /* Conversion between floating point and fixed point */
-const int scale = 16; // 1/2^16
-#define FloatToFixed(x) (x* (float)(1<<scale))
-#define FixedToFloat(x) ((float)x/(float)(1<<scale))
+const int scale = 8; // 1/2^16
 #define MUL(x, y)  ((((x) >> 4)*((y) >> 4)) >> 0)
-#define DIV(x, y) (((x)<<7)/(y)<<9)
-
-int SquareRootRounded(int x)
-{
-    // input a fixed number
-    Uint32 op  = x;
-    Uint32 res = 0;
-    Uint32 one = 1uL << 30; // The second-to-top bit is set: use 1u << 14 for uint16_t type; use 1uL<<30 for uint32_t type
-    
-    
-    // "one" starts at the highest power of four <= than the argument.
-    while (one > op)
-    {
-        one >>= 2;
-    }
-    
-    while (one != 0)
-    {
-        if (op >= res + one)
-        {
-            op = op - (res + one);
-            res = res +  2 * one;
-        }
-        res >>= 1;
-        one >>= 2;
-    }
-    
-    /* Do arithmetic rounding to nearest integer */
-    if (op > res)
-    {
-        res++;
-    }
-    
-    res = res*(float)(1<<4);
-    
-    return res; // fixed number
-}
 
 Int Task_create (Task_TransferInfo ** infoPtr)
 {

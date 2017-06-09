@@ -25,7 +25,6 @@
 
 /* ------------------------------------ OpenCV Headers                  */
 #include "meanshift.h"
-#include "arm_neon.h"
 
 /*------------------------------------- Fixed/Floating point conversion */
 const int scale = 8; // 1/2^16
@@ -484,9 +483,11 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
   float centre = static_cast<float>((ms.target_Region.height-1)/2.0);
 
   // Check allocation!!!
-  float32_t* norms;
+  float* norms;
+  float* normsPow;
   int norms_length = rect.height > rect.width ? rect.height : rect.width;
-  norms = new float32_t[norms_length];
+  norms = new float[norms_length];
+  normsPow = new float[norms_length];
 
   for(fcount=0; fcount<TotalFrames; ++fcount)
   {
@@ -504,26 +505,26 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
       // Track function from MS class
       for(int iter=0;iter<ms.cfg.MaxIter;iter++)
       {
-        //pdfTimer.Start();
-        cv::Mat target_candidate = ms.pdf_representation(frame, ms.target_Region);
-        //pdfTimer.Pause();
+        pdfTimer.Start();
+        //cv::Mat target_candidate = ms.pdf_representation(frame, ms.target_Region);
+        pdfTimer.Pause();
 
         // Calculate weight on DSP
         // Send ROI of BGR matrices and target_candidate to DSP
         
-        //bgrTimer.Start();
+        bgrTimer.Start();
         // New without split
         // Get ROI of frame (all colours)
         cv::Mat roi = frame(ms.target_Region).clone();
 
-        //cv::Mat target_candidate = ms.pdf_representation(frame, ms.target_Region);
+        cv::Mat target_candidate = ms.pdf_representation(roi, ms.target_Region);
 
         // Put ROI in shared buffer
         // Check for continuous!!
         int roi_size = roi.rows * roi.cols * sizeof(unsigned char) * 3;
         memcpy(pool_notify_DataBuf, roi.data, roi_size);
 
-        //bgrTimer.Pause();
+        bgrTimer.Pause();
 
         // New: float to fix on GPP:
         // This can be done more efficient with pointers instead of .at and single loop :)
@@ -531,7 +532,7 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
        
         // This works:
         
-        //divideSqrtTimer.Start();
+        divideSqrtTimer.Start();
         uint16_t fixed[48];
         for(int r = 0; r < 3; r++) {
           for(int c = 0; c < target_candidate.cols; c++) {
@@ -539,7 +540,7 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
             fixed[r*target_candidate.cols + c] = FloatToFixed(temp);
           }
         }
-        //divideSqrtTimer.Pause();
+        divideSqrtTimer.Pause();
 
         memcpy(&pool_notify_DataBuf[roi_size], fixed, 48 * sizeof(uint16_t));
 
@@ -564,8 +565,7 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
 
         // Wait for DSP
         sem_wait(&sem);
-
-        //calweightTimer.Start();
+        calweightTimer.Start();
 
         // Tell DSP to execute
         status = NOTIFY_notify (processorId, pool_notify_IPS_ID, pool_notify_IPS_EVENTNO, (Uint32)(7));
@@ -580,37 +580,9 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
         // Can be optimized quite a bit!
         if(first) {
           for(int i = 0; i < norms_length; i++) {
-            norms[i] = static_cast<float32_t>(i - centre)/centre;
+            norms[i] = static_cast<float>(i - centre)/centre;
+            normsPow[i] = norms[i]*norms[i];
           }
-          /*
-          if(ms.target_Region.height < ms.target_Region.width) {
-            for(int i = 0; i < ms.target_Region.height; i++) {
-              norms_i[i] = static_cast<float>(i - centre)/centre;
-              norms_j[i] = norms_i[i];
-              //norms_j[i] = static_cast<float>(i - centre)/centre;
-            }
-            for(int j = ms.target_Region.height; j < ms.target_Region.width; j++) {
-              norms_j[j] = static_cast<float>(j - centre)/centre;
-            }
-          }
-          else if(ms.target_Region.width < ms.target_Region.height) {
-            for(int j = 0; j < ms.target_Region.width; j++) {
-              norms_i[j] = static_cast<float>(j - centre)/centre;
-              norms_j[j] = norms_i[j];
-              //norms_j[j] = static_cast<float>(j - centre)/centre;
-            }
-            for(int i = ms.target_Region.width; i < ms.target_Region.height; i++) {
-              norms_i[i] = static_cast<float>(i - centre)/centre;
-            }
-          }
-          else {
-            for(int i = 0; i < ms.target_Region.width; i++) {
-              norms_i[i] = static_cast<float>(i - centre)/centre;
-              norms_j[i] = norms_i[i];
-             //norms_j[i] = static_cast<float>(j - centre)/centre;
-            }
-          }
-          */
 
           first = false;
         }
@@ -618,87 +590,29 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
         // Wait for execution
         sem_wait(&sem);
 
-        //calweightTimer.Pause();
+        calweightTimer.Pause();
 
         POOL_invalidate (POOL_makePoolId(processorId, SAMPLE_POOL_ID),
                                         pool_notify_DataBuf,
                                         pool_notify_BufferSize);
 
-        //trackTimer.Start();
+        trackTimer.Start();
 
-        /*float delta_x = 0.0;
+        float delta_x = 0.0;
         float sum_wij = 0.0;
-        float delta_y = 0.0;*/
+        float delta_y = 0.0;
         unsigned char mult;
 
         next_rect.x = ms.target_Region.x;
         next_rect.y = ms.target_Region.y;
         uint16_t* int_buf = (uint16_t*)pool_notify_DataBuf;
 
-
-        float delta_x = 0.0;
-        float32x4_t neon_deltax;
-        neon_deltax = vdupq_n_f32(0.0);
-        float delta_y = 0.0;
-        float32x4_t neon_deltay;
-        neon_deltay = vdupq_n_f32(0.0);
-        float sum_wij = 0.0;
-        float32x4_t neon_sumwij;
-        neon_sumwij = vdupq_n_f32(0.0);
-        float32_t tmp[4];
-        float32x4_t neon_tmp, neon_normi, neon_normj;
-
-
-
-
         for(int i = 0; i < ms.target_Region.height; i++)
         {
-            //float norm_i = static_cast<float>(i-centre)/centre;
-            float32_t pow1 = norms[i]*norms[i];
-
-            unsigned char remainder = ms.target_Region.width % 4;            
-            for(int j = 0; j < ms.target_Region.width - remainder; j+=4)
+            //float pow1 = norms[i]*norms[i];         
+            for(int j = 0; j < ms.target_Region.width ; j++)
             {
-
-              mult = pow1 + norms[j]*norms[j] > 1.0?0.0:1.0;
-              tmp[0] = FixedToFloat(int_buf[i*ms.target_Region.width + j])*mult;
-
-              mult = pow1 + norms[j+1]*norms[j+1] > 1.0?0.0:1.0;
-              tmp[1] = FixedToFloat(int_buf[i*ms.target_Region.width + j+1])*mult;
-
-              mult = pow1 + norms[j+2]*norms[j+2] > 1.0?0.0:1.0;
-              tmp[2] = FixedToFloat(int_buf[i*ms.target_Region.width + j+2])*mult;
-
-              mult = pow1 + norms[j+3]*norms[j+3] > 1.0?0.0:1.0;
-              tmp[3] = FixedToFloat(int_buf[i*ms.target_Region.width + j+3])*mult;
-
-              neon_tmp = vld1q_f32(tmp);
-
-              neon_normi = vmovq_n_f32(norms[i]);
-              neon_normj = vld1q_f32(&norms[j]);
-
-              neon_deltax = vmlaq_f32(neon_deltax, neon_tmp, neon_normj);
-              neon_deltay = vmlaq_f32(neon_deltay, neon_tmp, neon_normi);
-              neon_sumwij = vaddq_f32(neon_sumwij, neon_tmp);
-                //float norm_j = static_cast<float>(j-centre)/centre;
-                /*
-                mult = pow1 + norms[j]*norms[j] > 1.0 ? false : true;
-                if(!mult){
-                  if(norms[j] > 0) {
-                    break;
-                  }
-                  continue;
-                }
-                
-                float tmp = FixedToFloat(int_buf[i*ms.target_Region.width + j]);
-                delta_x += norms[j]*tmp;
-                delta_y += norms[i]*tmp;
-                sum_wij += tmp;*/
-            }
-
-            for(int j = ms.target_Region.width - remainder; j < ms.target_Region.width; j++) {
-              
-                mult = pow1 + norms[j]*norms[j] > 1.0 ? false : true;
+                mult = normsPow[i] + normsPow[j] > 1.0 ? false : true;
                 if(!mult){
                   if(norms[j] > 0) {
                     break;
@@ -713,23 +627,10 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
             }
         }
 
-        delta_x += vgetq_lane_f32(neon_deltax, 0)
-            + vgetq_lane_f32(neon_deltax, 1)
-            + vgetq_lane_f32(neon_deltax, 2)
-            + vgetq_lane_f32(neon_deltax, 3);
-          delta_y += vgetq_lane_f32(neon_deltay, 0)
-            + vgetq_lane_f32(neon_deltay, 1)
-            + vgetq_lane_f32(neon_deltay, 2)
-            + vgetq_lane_f32(neon_deltay, 3);
-          sum_wij += vgetq_lane_f32(neon_sumwij, 0)
-            + vgetq_lane_f32(neon_sumwij, 1)
-            + vgetq_lane_f32(neon_sumwij, 2)
-            + vgetq_lane_f32(neon_sumwij, 3);
-
         next_rect.x += static_cast<int>((delta_x/sum_wij)*centre);
         next_rect.y += static_cast<int>((delta_y/sum_wij)*centre);
 
-        //trackTimer.Pause();
+        trackTimer.Pause();
 
         if(abs(next_rect.x-ms.target_Region.x)<1 && abs(next_rect.y-ms.target_Region.y)<1)
         {
@@ -768,6 +669,7 @@ NORMAL_API DSP_STATUS pool_notify_Execute (IN Uint32 numIterations, Uint8 proces
   testTimer.Print();
 
   delete[] norms;
+  delete[] normsPow;
 
   return status ;
 }
